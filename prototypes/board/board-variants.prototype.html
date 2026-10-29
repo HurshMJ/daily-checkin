@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE, throwaway. Answers the wayfinder ticket "What tonight's Board looks like".
+  Four structurally different Board variants on one page, switched with #variant-a..d
+  (or ?variant=a..d when opened as a local file). State lives in memory only; reload resets it.
+  Assumption: no app exists yet, so this is a standalone page, not a route in the real app.
+  The variant switcher sits at the top because variants A and C use the bottom edge.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tonight's Board Variants</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:wght@600;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  /* Phone-first single column; answer colors carry state, the accent marks controls and "you". */
+  --bg: #eef1f4;
+  --surface: #ffffff;
+  --ink: #15202b;
+  --muted: #5a6775;
+  --line: #d9dfe6;
+  --accent: #0b6a86;
+  --yes: #1d7f47; --yes-bg: #dff2e6;
+  --maybe: #9a6200; --maybe-bg: #f9edd3;
+  --no: #ad3636; --no-bg: #f7e1e1;
+  --none: #6f7b88;
+  --display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --body: "Atkinson Hyperlegible", "Segoe UI", system-ui, sans-serif;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1319; --surface: #17202a; --ink: #e6ecf1; --muted: #9aa7b4; --line: #2a3542;
+    --accent: #52b9d6;
+    --yes: #55c784; --yes-bg: #163424; --maybe: #e2ab42; --maybe-bg: #382b10;
+    --no: #e57a7a; --no-bg: #3a1c1c; --none: #8b97a4;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1319; --surface: #17202a; --ink: #e6ecf1; --muted: #9aa7b4; --line: #2a3542;
+  --accent: #52b9d6;
+  --yes: #55c784; --yes-bg: #163424; --maybe: #e2ab42; --maybe-bg: #382b10;
+  --no: #e57a7a; --no-bg: #3a1c1c; --none: #8b97a4;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body { background: var(--bg); color: var(--ink); font: 16px/1.4 var(--body); }
+h1, h2 { font-family: var(--display); margin: 0; text-wrap: balance; }
+h1 { font-size: 28px; font-weight: 800; }
+h2 { font-size: 15px; font-weight: 600; }
+ul { list-style: none; margin: 0; padding: 0; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+.app { max-width: 440px; margin: 0 auto; padding: 72px 16px 32px; display: grid; gap: 16px; }
+.num { font-variant-numeric: tabular-nums; }
+
+/* shared bits */
+.av { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; flex: none; font-size: 15px; }
+.av-yes { background: var(--yes-bg); color: var(--yes); box-shadow: inset 0 0 0 2px var(--yes); }
+.av-maybe { background: var(--maybe-bg); color: var(--maybe); box-shadow: inset 0 0 0 2px var(--maybe); }
+.av-no { background: var(--no-bg); color: var(--no); box-shadow: inset 0 0 0 2px var(--no); }
+.av-none { background: transparent; color: var(--none); box-shadow: inset 0 0 0 2px var(--line); border: 2px dashed var(--none); }
+.note { color: var(--muted); font-size: 14px; }
+.you { color: var(--accent); font-weight: 700; }
+.ans { border: 2px solid var(--line); background: var(--surface); border-radius: 12px; padding: 12px 8px; font-weight: 700; }
+.ans-yes[aria-pressed="true"] { background: var(--yes); border-color: var(--yes); color: var(--surface); }
+.ans-maybe[aria-pressed="true"] { background: var(--maybe); border-color: var(--maybe); color: var(--surface); }
+.ans-no[aria-pressed="true"] { background: var(--no); border-color: var(--no); color: var(--surface); }
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.notefield input { width: 100%; border: 1px solid var(--line); background: var(--surface); border-radius: 10px; padding: 10px 12px; }
+.notefield input:disabled { opacity: .55; }
+.pill { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+.st-on { background: var(--yes); color: var(--surface); }
+.st-off { background: var(--no-bg); color: var(--no); }
+.st-pending { background: var(--line); color: var(--ink); }
+.word-yes { color: var(--yes); } .word-maybe { color: var(--maybe); } .word-no { color: var(--no); } .word-none { color: var(--none); font-style: italic; }
+
+/* A: grouped list + answer dock */
+.chips { display: flex; gap: 8px; overflow-x: auto; padding-top: 10px; }
+.chip { border: 1px solid var(--line); background: var(--surface); border-radius: 999px; padding: 6px 14px; white-space: nowrap; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.banner { border-radius: 14px; padding: 14px 16px; display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.banner strong { font-family: var(--display); font-size: 22px; }
+.banner-on { background: var(--yes); color: var(--surface); }
+.banner-off { background: var(--no-bg); color: var(--no); }
+.banner-pending { background: var(--surface); border: 1px solid var(--line); }
+.grp h2 { color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 13px; padding-bottom: 6px; }
+.rows { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; }
+.row { display: flex; align-items: center; gap: 12px; padding: 10px 14px; }
+.row + .row { border-top: 1px solid var(--line); }
+.row .who { font-weight: 700; }
+.row .note { margin-left: auto; text-align: right; }
+.row.me { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.dock { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); padding: 12px 16px 16px; }
+.dock-in { max-width: 440px; margin: 0 auto; display: grid; gap: 8px; }
+.dock-q { font-size: 14px; color: var(--muted); }
+.dock-space { height: 150px; }
+
+/* B: answer first */
+.b-top select { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); font-weight: 700; }
+.ask { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 20px 16px; display: grid; gap: 14px; }
+.big .ans { padding: 22px 8px; font-size: 20px; border-radius: 16px; }
+.mine { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0; font-size: 18px; }
+.pill-yes { background: var(--yes); color: var(--surface); } .pill-maybe { background: var(--maybe); color: var(--surface); } .pill-no { background: var(--no); color: var(--surface); }
+.meter { display: flex; gap: 6px; align-items: center; }
+.dot { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--yes); }
+.dot.full { background: var(--yes); }
+.meter-text { margin: 6px 0 0; font-weight: 700; }
+.grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; padding: 12px 8px; display: grid; justify-items: center; gap: 2px; text-align: center; }
+.tile .av { width: 46px; height: 46px; font-size: 19px; margin-bottom: 4px; }
+.tile .who { font-weight: 700; }
+.tile .w { font-size: 14px; font-weight: 700; }
+.tile .note { font-size: 13px; }
+
+/* C: tally columns + tab bar */
+.c-head { display: grid; gap: 2px; }
+.eyebrow { margin: 0; color: var(--muted); font-weight: 700; }
+.score { margin: 0; display: flex; align-items: baseline; gap: 8px; }
+.big-n { font-family: var(--display); font-size: 64px; font-weight: 800; line-height: 1; }
+.cols { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; align-items: start; }
+.col { background: var(--surface); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.col-h { width: 100%; border: 0; padding: 10px 6px; font-weight: 700; display: grid; gap: 2px; background: transparent; border-bottom: 4px solid var(--line); }
+.col-h small { font-weight: 400; font-size: 12px; color: var(--muted); }
+.col-yes .col-h { border-bottom-color: var(--yes); color: var(--yes); }
+.col-maybe .col-h { border-bottom-color: var(--maybe); color: var(--maybe); }
+.col-no .col-h { border-bottom-color: var(--no); color: var(--no); }
+.col-h[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.col ul { padding: 8px; display: grid; gap: 6px; min-height: 60px; }
+.col li { font-weight: 700; font-size: 15px; }
+.col li .note { display: block; font-weight: 400; font-size: 12px; }
+.waiting { border: 2px dashed var(--line); border-radius: 14px; padding: 12px 14px; }
+.waiting p { margin: 4px 0 0; }
+.tabbar { position: fixed; left: 0; right: 0; bottom: 0; background: var(--surface); border-top: 1px solid var(--line); display: flex; justify-content: center; }
+.tab { flex: 1; max-width: 220px; border: 0; background: transparent; padding: 10px 6px 14px; display: grid; gap: 2px; border-top: 3px solid transparent; }
+.tab[aria-pressed="true"] { border-top-color: var(--accent); font-weight: 700; }
+.tab small { color: var(--muted); font-size: 12px; }
+.tab-space { height: 70px; }
+
+/* D: every Group on one screen */
+.d-me { background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 16px; display: grid; gap: 12px; }
+.d-sub { margin: -6px 0 0; color: var(--muted); font-size: 14px; }
+.d-grp { display: grid; gap: 8px; }
+.d-grp header { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.d-grp h2 { font-size: 20px; }
+.d-count { margin: -4px 0 0; color: var(--muted); font-size: 14px; }
+.d-rows { display: grid; gap: 4px; }
+.d-row { display: grid; grid-template-columns: 1fr auto; column-gap: 10px; background: var(--surface); padding: 8px 12px; border-radius: 8px; border-left: 5px solid var(--line); }
+.d-row .note { grid-column: 1 / -1; }
+.stripe-yes { border-left-color: var(--yes); } .stripe-maybe { border-left-color: var(--maybe); } .stripe-no { border-left-color: var(--no); } .stripe-none { border-left-style: dashed; border-left-color: var(--none); }
+.d-row .who { font-weight: 700; }
+.d-row .w { font-weight: 700; font-size: 14px; }
+
+/* prototype switcher: deliberately not part of the design */
+.proto { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10; display: flex; align-items: center; gap: 4px; background: #111; color: #fff; border-radius: 999px; padding: 4px; box-shadow: 0 4px 16px rgba(0,0,0,.3); font-size: 13px; white-space: nowrap; }
+.proto button { background: #333; color: #fff; border: 0; border-radius: 999px; min-width: 32px; height: 32px; padding: 0 10px; }
+.proto .plabel { padding: 0 8px; }
+.proto .plabel b { color: #ffd166; }
+@media (prefers-reduced-motion: no-preference) { .ans, .chip, .tab, .col-h { transition: background-color .15s, border-color .15s; } }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const ME = 'hursh';
+const groups = [
+  { id: 'friday', name: 'Friday Squad', threshold: 3, members: ['hursh', 'mara', 'dex', 'jun', 'kofi', 'lena'] },
+  { id: 'apex', name: 'Apex Crew', threshold: 3, members: ['hursh', 'dex', 'rio', 'sam'] },
+];
+// One Check-in per Member, shown on every Board they belong to.
+const checkins = {
+  mara: { a: 'yes', note: 'on after 10' },
+  dex: { a: 'yes', note: '' },
+  jun: { a: 'maybe', note: 'depends on work' },
+  kofi: { a: 'no', note: 'out of town' },
+  rio: { a: 'yes', note: 'can do 2 hours' },
+};
+const wasOn = {};
+const LABEL = { yes: 'Yes', maybe: 'Maybe', no: 'No', none: 'No answer yet' };
+const ORDER = { yes: 0, maybe: 1, no: 2, none: 3 };
+const VARIANTS = { a: 'Grouped list', b: 'Your answer first', c: 'Tally columns', d: 'All Groups, one screen' };
+let currentGroup = 'friday';
+
+const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const ans = m => (checkins[m] ? checkins[m].a : 'none');
+const noteOf = m => (checkins[m] && checkins[m].note ? esc(checkins[m].note) : '');
+const who = m => (m === ME ? '<span class="you">You</span>' : esc(m));
+const yesCount = g => g.members.filter(m => ans(m) === 'yes').length;
+const sorted = g => [...g.members].sort((x, y) => ORDER[ans(x)] - ORDER[ans(y)]);
+const cur = () => groups.find(g => g.id === currentGroup);
+const avatar = m => `<span class="av av-${ans(m)}" aria-hidden="true">${esc(m[0].toUpperCase())}</span>`;
+
+function trackGameOn() { groups.forEach(g => { if (yesCount(g) >= g.threshold) wasOn[g.id] = true; }); }
+function status(g) {
+  const y = yesCount(g), t = g.threshold;
+  if (y >= t) return { k: 'on', text: 'Game On', sub: `${y} of ${t} Yes needed` };
+  if (wasOn[g.id]) return { k: 'off', text: 'Game Off', sub: `${y} of ${t} Yes, needs ${t - y} more` };
+  return { k: 'pending', text: `Needs ${t - y} more Yes`, sub: `${y} of ${t} Yes so far` };
+}
+function answerButtons(v) {
+  return ['yes', 'maybe', 'no'].map(k =>
+    `<button type="button" class="ans ans-${k}" data-act="answer" data-a="${k}" aria-pressed="${ans(ME) === k}">${LABEL[k]}</button>`).join('');
+}
+function noteInput(v) {
+  const off = ans(ME) === 'none';
+  return `<label class="notefield" for="note-${v}"><span class="sr">Note on your Check-in</span>
+    <input id="note-${v}" data-note maxlength="80" ${off ? 'disabled' : ''}
+      placeholder="${off ? 'Answer first, then add a note' : 'Add a note, like “on after 10”'}" value="${noteOf(ME)}"></label>`;
+}
+
+function variantA() {
+  const g = cur(), st = status(g);
+  const sections = ['yes', 'maybe', 'no', 'none'].map(k => {
+    const ms = g.members.filter(m => ans(m) === k);
+    if (!ms.length) return '';
+    return `<section class="grp"><h2>${LABEL[k]} <span class="num">${ms.length}</span></h2><ul class="rows">${ms.map(m =>
+      `<li class="row ${m === ME ? 'me' : ''}">${avatar(m)}<span class="who">${who(m)}</span><span class="note">${noteOf(m)}</span></li>`).join('')}</ul></section>`;
+  }).join('');
+  return `<header><h1>Tonight</h1><nav class="chips" aria-label="Groups">${groups.map(x =>
+      `<button class="chip" data-act="group" data-id="${x.id}" aria-pressed="${x.id === g.id}">${esc(x.name)}</button>`).join('')}</nav></header>
+    <section class="banner banner-${st.k}"><strong>${st.text}</strong><span class="num">${st.sub}</span></section>
+    ${sections}<div class="dock-space"></div>
+    <form class="dock" data-form><div class="dock-in"><span class="dock-q">${ans(ME) === 'none' ? 'Are you on tonight?' : 'Your Check-in, shown on all your Boards'}</span>
+      <div class="seg">${answerButtons('a')}</div>${noteInput('a')}</div></form>`;
+}
+
+function variantB() {
+  const g = cur(), st = status(g), y = yesCount(g), mine = ans(ME);
+  const dots = Array.from({ length: g.threshold }, (_, i) => `<span class="dot ${i < y ? 'full' : ''}"></span>`).join('')
+    + (y > g.threshold ? `<span class="num">+${y - g.threshold}</span>` : '');
+  const ask = mine === 'none'
+    ? `<h1>Are you on tonight?</h1><div class="seg big">${answerButtons('b')}</div>`
+    : `<p class="mine"><span class="pill pill-${mine}">You: ${LABEL[mine]}</span><span class="note">${noteOf(ME) || 'No note'}</span></p>
+       <div class="seg">${answerButtons('b')}</div>${noteInput('b')}`;
+  return `<header class="b-top"><label for="grp-b" class="sr">Group</label><select id="grp-b" data-groupselect>${groups.map(x =>
+      `<option value="${x.id}" ${x.id === g.id ? 'selected' : ''}>${esc(x.name)} · ${yesCount(x)}/${x.threshold} Yes · ${status(x).text}</option>`).join('')}</select></header>
+    <section class="ask">${ask}</section>
+    <section aria-label="Game On progress"><div class="meter" aria-hidden="true">${dots}</div>
+      <p class="meter-text">${st.text} <span class="note num">· ${st.sub}</span></p></section>
+    <ul class="grid">${sorted(g).map(m => `<li class="tile">${avatar(m)}<span class="who">${who(m)}</span>
+      <span class="w word-${ans(m)}">${LABEL[ans(m)]}</span><span class="note">${noteOf(m)}</span></li>`).join('')}</ul>`;
+}
+
+function variantC() {
+  const g = cur(), st = status(g);
+  const waiting = g.members.filter(m => ans(m) === 'none');
+  const cols = ['yes', 'maybe', 'no'].map(k => {
+    const ms = g.members.filter(m => ans(m) === k);
+    return `<section class="col col-${k}"><button class="col-h" data-act="answer" data-a="${k}" aria-pressed="${ans(ME) === k}">${LABEL[k]} <span class="num">${ms.length}</span>
+      <small>${ans(ME) === k ? 'You are here' : 'Tap to join'}</small></button>
+      <ul>${ms.map(m => `<li>${who(m)}<span class="note">${noteOf(m)}</span></li>`).join('')}</ul></section>`;
+  }).join('');
+  return `<header class="c-head"><p class="eyebrow">${esc(g.name)} · Tonight</p>
+      <p class="score"><span class="big-n num">${yesCount(g)}</span><span class="num">of ${g.threshold} Yes</span> <span class="pill st-${st.k}">${st.text}</span></p></header>
+    <div class="cols">${cols}</div>
+    <section class="waiting"><h2>Waiting on</h2><p>${waiting.length ? waiting.map(who).join(', ') : 'Everyone has answered'}</p></section>
+    ${noteInput('c')}<div class="tab-space"></div>
+    <nav class="tabbar" aria-label="Groups">${groups.map(x =>
+      `<button class="tab" data-act="group" data-id="${x.id}" aria-pressed="${x.id === g.id}">${esc(x.name)}<small class="num">${yesCount(x)}/${x.threshold} Yes · ${status(x).text}</small></button>`).join('')}</nav>`;
+}
+
+function variantD() {
+  return `<section class="d-me"><h1>Tonight</h1><p class="d-sub">Your answer shows on all ${groups.length} of your Boards.</p>
+      <div class="seg">${answerButtons('d')}</div>${noteInput('d')}</section>
+    ${groups.map(g => {
+      const st = status(g);
+      return `<section class="d-grp"><header><h2>${esc(g.name)}</h2><span class="pill st-${st.k}">${st.text}</span></header>
+        <p class="d-count num">${st.sub}</p>
+        <ul class="d-rows">${sorted(g).map(m => `<li class="d-row stripe-${ans(m)}"><span class="who">${who(m)}</span>
+          <span class="w word-${ans(m)}">${LABEL[ans(m)]}</span>${noteOf(m) ? `<span class="note">${noteOf(m)}</span>` : ''}</li>`).join('')}</ul></section>`;
+    }).join('')}`;
+}
+
+function currentVariant() {
+  const h = location.hash.match(/^#variant-([a-d])$/);
+  if (h) return h[1];
+  const q = new URLSearchParams(location.search).get('variant');
+  return q && VARIANTS[q.toLowerCase()] ? q.toLowerCase() : 'a';
+}
+function setVariant(k) { location.hash = 'variant-' + k; render(); }
+function step(d) { const keys = Object.keys(VARIANTS); const i = keys.indexOf(currentVariant()); setVariant(keys[(i + d + keys.length) % keys.length]); }
+
+function render() {
+  const v = currentVariant();
+  const body = { a: variantA, b: variantB, c: variantC, d: variantD }[v]();
+  const mine = ans(ME);
+  document.getElementById('root').innerHTML = `
+    <div class="proto" role="region" aria-label="Prototype controls">
+      <button data-act="prev" aria-label="Previous variant">‹</button>
+      <span class="plabel"><b>${v.toUpperCase()}</b> ${VARIANTS[v]} · you: ${LABEL[mine]}</span>
+      <button data-act="next" aria-label="Next variant">›</button>
+      <button data-act="clear">Clear me</button>
+    </div>
+    <main class="app">${body}</main>`;
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('[data-act]');
+  if (!t) return;
+  const act = t.dataset.act;
+  if (act === 'answer') { checkins[ME] = { a: t.dataset.a, note: checkins[ME] ? checkins[ME].note : '' }; trackGameOn(); }
+  if (act === 'group') currentGroup = t.dataset.id;
+  if (act === 'clear') delete checkins[ME];
+  if (act === 'prev') return step(-1);
+  if (act === 'next') return step(1);
+  render();
+});
+document.addEventListener('change', e => {
+  if (e.target.matches('[data-groupselect]')) { currentGroup = e.target.value; render(); }
+  if (e.target.matches('[data-note]') && checkins[ME]) { checkins[ME].note = e.target.value.trim(); setTimeout(render, 0); }
+});
+document.addEventListener('submit', e => e.preventDefault());
+document.addEventListener('keydown', e => {
+  if (e.target.matches('input, textarea, select, [contenteditable]')) {
+    if (e.key === 'Enter' && e.target.matches('[data-note]')) e.target.blur();
+    return;
+  }
+  if (e.key === 'ArrowLeft') step(-1);
+  if (e.key === 'ArrowRight') step(1);
+});
+window.addEventListener('hashchange', render);
+render();
+</script>
+</body>
+</html>
