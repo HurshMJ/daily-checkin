@@ -22,6 +22,10 @@ _Avoid_: Admin, leader, host
 The Owner's offer for a person to join a Group.
 _Avoid_: Request, join code
 
+**Password Reset Link**:
+A one-time link an Owner generates so a Member of their Group can set a new password. Unrelated to the Reset.
+_Avoid_: Reset, recovery link
+
 ### Availability
 
 **Game Night**:
