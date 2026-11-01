@@ -154,6 +154,16 @@ describe("Logging in", () => {
     expect(await unknownUser.text()).toContain(message);
   });
 
+  it("refuses a password over 128 code points with the same message", async () => {
+    const app = startApp();
+    await app.createLogin(alice);
+
+    const response = await app.device().post("/login", { username: "Alice", password: "a".repeat(129) });
+
+    expect(response.status).toBe(401);
+    expect(await response.text()).toContain("That username and password do not match.");
+  });
+
   it("sends the session cookie HttpOnly, Secure, SameSite=Lax for 90 days", async () => {
     const app = startApp();
     await app.createLogin(alice);

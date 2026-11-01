@@ -1,5 +1,9 @@
 /**
  * Token and password primitives on Web Crypto. Nothing here touches D1.
+ *
+ * The Operator command (scripts/setup-link.ts) also imports this module and
+ * Node runs it directly through type stripping, so it must stay erasable
+ * TypeScript that imports nothing.
  */
 
 /** The most PBKDF2 iterations the Workers runtime accepts. */
@@ -62,7 +66,10 @@ async function pbkdf2(password: string, salt: Uint8Array<ArrayBuffer>, iteration
   return crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations }, key, 256);
 }
 
-/** Hashes a password as typed with PBKDF2-SHA256 and a new 16-byte salt. */
+/**
+ * Hashes a password with PBKDF2-SHA256 and a new 16-byte salt. Callers pass
+ * the normalised password (`normalisePassword` in rules.ts).
+ */
 export async function hashPassword(password: string, iterations: number): Promise<PasswordHash> {
   const salt = crypto.getRandomValues(new Uint8Array(16));
   const bits = await pbkdf2(password, salt, iterations);

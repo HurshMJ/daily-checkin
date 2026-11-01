@@ -8,7 +8,7 @@ import {
   verifyPassword,
 } from "./crypto";
 import type { AvatarColour } from "./palette";
-import { type NewLoginForm, usernameKey } from "./rules";
+import { type NewLoginForm, normalisePassword, passwordTooLong, usernameKey } from "./rules";
 
 /** A session lasts this long after the Member's latest request. */
 export const SESSION_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
@@ -102,9 +102,13 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
 
     /**
      * Checks a username in any casing and a password. Returns a new session
-     * token, or null without saying which part was wrong.
+     * token, or null without saying which part was wrong. A password longer
+     * than any login can have is refused before any lookup or PBKDF2 work.
      */
-    async logIn(username: string, password: string): Promise<string | null> {
+    async logIn(username: string, typedPassword: string): Promise<string | null> {
+      const password = normalisePassword(typedPassword);
+      if (passwordTooLong(password)) return null;
+
       const row = await db
         .prepare(
           "SELECT id, password_hash, password_salt, password_iterations FROM members WHERE username_lower = ?1",
