@@ -5,6 +5,12 @@
 	"main": "./workers/app.ts",
 	"workers_dev": true,
 	"observability": { "enabled": true },
+	"vars": {
+		// Iterations for new password hashes (each hash keeps its own count).
+		// 100000 is the Workers maximum. Lower it if the smoke login hits the
+		// Workers Free CPU limit; existing passwords keep working.
+		"PBKDF2_ITERATIONS": "100000"
+	},
 	"triggers": {
 		// One hourly run; scheduled() decides which jobs are due (empty for now).
 		"crons": ["0 * * * *"]
