@@ -1,0 +1,22 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "daily-checkin",
+	"compatibility_date": "2026-10-23",
+	"main": "./workers/app.ts",
+	"workers_dev": true,
+	"observability": { "enabled": true },
+	"triggers": {
+		// One hourly run; scheduled() decides which jobs are due (empty for now).
+		"crons": ["0 * * * *"]
+	},
+	"d1_databases": [
+		{
+			"binding": "DB",
+			"database_name": "daily-checkin",
+			// PLACEHOLDER: the Operator replaces this with the real id printed by
+			// `wrangler d1 create daily-checkin` (see scripts/operator-setup.sh).
+			"database_id": "00000000-0000-0000-0000-000000000000",
+			"migrations_dir": "migrations"
+		}
+	]
+}
