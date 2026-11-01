@@ -26,6 +26,10 @@ _Avoid_: Request, join code
 A one-time link that an Owner of one of the Member's Groups, or the Operator, generates so the Member can set a new password. Unrelated to the Reset.
 _Avoid_: Reset, recovery link
 
+**Setup Link**:
+A one-time link the Operator generates so a person can create a login without joining any Group. It is how the very first Member gets in.
+_Avoid_: Invite, sign-up link
+
 **Operator**:
 The person who deploys and runs the app. Acts from outside the app rather than through a Member's login, for example to let a locked-out Owner back in.
 _Avoid_: Admin, superuser, host
