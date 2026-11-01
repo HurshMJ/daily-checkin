@@ -42,7 +42,7 @@ banner() {
   printf '%s  %s stages%s\n\n' "$DIM" "$TOTAL_STAGES" "$RESET"
   printf '%s  You drive the browser; this wizard tells you exactly what to do and\n' "$DIM"
   printf '  captures the values you copy back. Stop any time with Ctrl-C and re-run\n'
-  printf '  later, since it remembers values already saved.%s\n' "$RESET"
+  printf '  it later.%s\n' "$RESET"
   pause "Ready to start?"
 }
 
@@ -224,18 +224,22 @@ stage "Create the D1 database"
 if ! grep -q "$PLACEHOLDER_DB_ID" "$WRANGLER_CONFIG"; then
   note "$WRANGLER_CONFIG already holds a real database_id; skipping."
 else
-  say "This creates an empty D1 database named daily-checkin in your account."
-  say "If it already exists, wrangler says so; run 'npx wrangler d1 list' to see its id."
+  say "This creates an empty D1 database named daily-checkin in your account"
+  say "and writes its id into the existing DB binding in $WRANGLER_CONFIG."
   if confirm "Create the daily-checkin D1 database now?"; then
-    npx wrangler d1 create daily-checkin || warn "create failed; if it already exists, copy its id from 'npx wrangler d1 list'."
+    # --binding DB makes wrangler update the existing DB entry in place instead
+    # of asking to append a second d1_databases entry.
+    npx wrangler d1 create daily-checkin --binding DB || warn "create failed; if it already exists, copy its id from 'npx wrangler d1 list'."
   fi
-  step "Copy the database_id that wrangler printed (a UUID)."
-  ask D1_DATABASE_ID "Paste the database_id:"
-  if [[ ! "$D1_DATABASE_ID" =~ ^[0-9a-fA-F-]{36}$ ]]; then
-    printf '  %sThat does not look like a database id. Re-run the wizard.%s\n' "$RED" "$RESET"
-    exit 1
+  if grep -q "$PLACEHOLDER_DB_ID" "$WRANGLER_CONFIG"; then
+    step "Copy the daily-checkin database_id from 'npx wrangler d1 list' (a UUID)."
+    ask D1_DATABASE_ID "Paste the database_id:"
+    if [[ ! "$D1_DATABASE_ID" =~ ^[0-9a-fA-F]{8}-([0-9a-fA-F]{4}-){3}[0-9a-fA-F]{12}$ ]]; then
+      printf '  %sThat does not look like a database id. Re-run the wizard.%s\n' "$RED" "$RESET"
+      exit 1
+    fi
+    sed -i.bak "s/$PLACEHOLDER_DB_ID/$D1_DATABASE_ID/" "$WRANGLER_CONFIG" && rm -f "$WRANGLER_CONFIG.bak"
   fi
-  sed -i.bak "s/$PLACEHOLDER_DB_ID/$D1_DATABASE_ID/" "$WRANGLER_CONFIG" && rm -f "$WRANGLER_CONFIG.bak"
   printf '  %s✓ wrote%s database_id → %s\n' "$GREEN" "$RESET" "$WRANGLER_CONFIG"
   SKIPPED+=("commit the database_id in $WRANGLER_CONFIG to the pull request branch before merging")
 fi
