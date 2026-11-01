@@ -23,8 +23,12 @@ The Owner's single-use offer for one person to join a Group, either as a new Mem
 _Avoid_: Request, join code
 
 **Password Reset Link**:
-A one-time link an Owner generates so a Member of their Group can set a new password. Unrelated to the Reset.
+A one-time link that an Owner of one of the Member's Groups, or the Operator, generates so the Member can set a new password. Unrelated to the Reset.
 _Avoid_: Reset, recovery link
+
+**Operator**:
+The person who deploys and runs the app. Acts from outside the app rather than through a Member's login, for example to let a locked-out Owner back in.
+_Avoid_: Admin, superuser, host
 
 ### Availability
 
