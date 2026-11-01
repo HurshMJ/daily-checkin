@@ -3,7 +3,10 @@
   "include": [
     "vite.config.ts",
     "vitest.config.ts",
-    "react-router.config.ts"
+    "react-router.config.ts",
+    "scripts/**/*",
+    "app/auth/crypto.ts",
+    "app/auth/setup-link-sql.ts"
   ],
   "compilerOptions": {
     "composite": true,
@@ -16,6 +19,7 @@
     ],
     "target": "ES2022",
     "module": "ES2022",
-    "moduleResolution": "bundler"
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true
   }
 }

@@ -159,8 +159,10 @@ GitHub Secrets hold exactly four values:
 The last step logs in as a dedicated smoke-test login that belongs to no Group:
 it posts the credentials to `/login`, opens Tonight with the new session and
 expects the empty state with "Create a Group", then logs out. The password
-reaches `curl` on standard input and is never printed. Any failure fails the
-run.
+reaches `curl` on standard input and is never printed. The login request is
+tried up to 3 times, 5 seconds apart, because the new version can take a few
+seconds to reach every edge location; the other requests are tried once. Any
+failure fails the run.
 
 The smoke step runs after Deploy, so **a red Smoke login after a green Deploy
 means the new code is already live**. Roll back with `npx wrangler rollback`

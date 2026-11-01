@@ -87,19 +87,29 @@ jobs:
 
           headers=$(mktemp)
           body=$(mktemp)
-          # The password reaches curl on stdin (printf is a shell builtin), never
-          # as a process argument.
-          printf '%s' "$SMOKE_PASSWORD" | curl --silent --show-error --max-time 30 \
-            --output /dev/null --dump-header "$headers" \
-            --header "Origin: $APP_URL" \
-            --data-urlencode "username=$SMOKE_USERNAME" \
-            --data-urlencode "password@-" \
-            "$APP_URL/login"
-          status=$(head -n1 "$headers" | tr -d '\r' | cut -d' ' -f2)
-          location=$(grep -i '^location:' "$headers" | tr -d '\r' | cut -d' ' -f2 || true)
-          cookie=$(grep -i '^set-cookie: __Host-session=' "$headers" | head -n1 | sed -E 's/^[^:]*: ([^;]*);.*/\1/' || true)
+          # The new version can take a few seconds to reach every edge location,
+          # so only the login is tried up to 3 times, 5 seconds apart. The
+          # password reaches curl on stdin (printf is a shell builtin), never as
+          # a process argument.
+          for attempt in 1 2 3; do
+            : > "$headers"
+            printf '%s' "$SMOKE_PASSWORD" | curl --silent --show-error --max-time 30 \
+              --output /dev/null --dump-header "$headers" \
+              --header "Origin: $APP_URL" \
+              --data-urlencode "username=$SMOKE_USERNAME" \
+              --data-urlencode "password@-" \
+              "$APP_URL/login" || true
+            status=$(head -n1 "$headers" | tr -d '\r' | cut -d' ' -f2)
+            location=$(grep -i '^location:' "$headers" | tr -d '\r' | cut -d' ' -f2 || true)
+            cookie=$(grep -i '^set-cookie: __Host-session=' "$headers" | head -n1 | sed -E 's/^[^:]*: ([^;]*);.*/\1/' || true)
+            if [ "$status" = "302" ] && [ "$location" = "/" ] && [ -n "$cookie" ]; then break; fi
+            if [ "$attempt" -lt 3 ]; then
+              echo "Smoke login attempt $attempt answered ${status:-no response}; retrying in 5 seconds."
+              sleep 5
+            fi
+          done
           if [ "$status" != "302" ] || [ "$location" != "/" ] || [ -z "$cookie" ]; then
-            echo "::error::Smoke login failed: POST /login answered $status, Location '$location', session cookie $([ -n "$cookie" ] && echo set || echo missing)."
+            echo "::error::Smoke login failed after 3 attempts: POST /login answered ${status:-no response}, Location '$location', session cookie $([ -n "$cookie" ] && echo set || echo missing)."
             exit 1
           fi
 
