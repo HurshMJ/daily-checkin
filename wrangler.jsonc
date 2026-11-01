@@ -13,9 +13,7 @@
 		{
 			"binding": "DB",
 			"database_name": "daily-checkin",
-			// PLACEHOLDER: the Operator replaces this with the real id printed by
-			// `wrangler d1 create daily-checkin` (see scripts/operator-setup.sh).
-			"database_id": "00000000-0000-0000-0000-000000000000",
+			"database_id": "f91151c9-b826-4512-a7f8-bc45ee67b2de",
 			"migrations_dir": "migrations"
 		}
 	]
