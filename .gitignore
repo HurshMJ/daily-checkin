@@ -1,7 +1,12 @@
 node_modules/
 dist/
 .wrangler/
-.dev.vars
 .env
 .env.*
 !.env.example
+*.tsbuildinfo
+/.react-router/
+/build/
+.mf
+.dev.vars*
+worker-configuration.d.ts
