@@ -95,12 +95,13 @@ runs these steps in order; a failure at any step stops the run:
 1. `npm ci`
 2. typecheck
 3. tests
-4. a check that both Cloudflare secrets are set
-5. `wrangler d1 migrations apply DB --remote`
-6. build and `wrangler deploy`
+4. build
+5. a check that both Cloudflare secrets are set
+6. `wrangler d1 migrations apply DB --remote`
+7. `wrangler deploy`
 
 GitHub Secrets hold only `CLOUDFLARE_API_TOKEN`, scoped to Workers Scripts and
-D1 edit, and `CLOUDFLARE_ACCOUNT_ID`.
+D1 edit, and `CLOUDFLARE_ACCOUNT_ID`. Only the last three steps receive them.
 
 ### One-time setup
 
