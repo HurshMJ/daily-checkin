@@ -11,15 +11,15 @@ A set of friends who play together and share one Board. A person may belong to s
 _Avoid_: Team, server, party, clan
 
 **Member**:
-A person who belongs to a Group and can log in to see its Board and check in.
+A person with a login to the app. A Member may belong to several Groups, or to none.
 _Avoid_: User, player, account
 
 **Owner**:
-The Member who created a Group. Only the Owner invites or removes Members and sets the Game On Threshold.
+The one Member of a Group who invites or removes Members and sets the Game On Threshold. The creator starts as Owner and can hand ownership to another Member.
 _Avoid_: Admin, leader, host
 
 **Invite**:
-The Owner's offer for a person to join a Group.
+The Owner's single-use offer for one person to join a Group, either as a new Member or as an existing one.
 _Avoid_: Request, join code
 
 **Password Reset Link**:
