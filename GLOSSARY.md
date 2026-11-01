@@ -14,6 +14,10 @@ _Avoid_: Team, server, party, clan
 A person with a login to the app. A Member may belong to several Groups, or to none.
 _Avoid_: User, player, account
 
+**Display Name**:
+An optional name a Member chooses to be shown by instead of their username. Logging in still uses the username.
+_Avoid_: Nickname, alias, handle
+
 **Owner**:
 The one Member of a Group who invites or removes Members and sets the Game On Threshold. The creator starts as Owner and can hand ownership to another Member.
 _Avoid_: Admin, leader, host
