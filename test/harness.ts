@@ -25,13 +25,20 @@ export interface RecordedPush {
   payload: string;
 }
 
-/** A push sender that records every send instead of delivering it. */
-export function recordingPushSender(): PushSender & { sent: RecordedPush[] } {
+/**
+ * A push sender that records every send instead of delivering it. Each send
+ * returns the status scripted for its endpoint, or 201 (accepted) by default,
+ * so a test can fake a push service answering 404 or 410.
+ */
+export function recordingPushSender(
+  statuses: Record<string, number> = {},
+): PushSender & { sent: RecordedPush[] } {
   const sent: RecordedPush[] = [];
   return {
     sent,
     async send(subscription, payload) {
       sent.push({ subscription, payload });
+      return { status: statuses[subscription.endpoint] ?? 201 };
     },
   };
 }
@@ -39,10 +46,13 @@ export function recordingPushSender(): PushSender & { sent: RecordedPush[] } {
 /**
  * Builds the real Worker around a test clock and a recording push sender, and
  * calls its `fetch` and `scheduled` entry points with the real local bindings.
+ * `pushStatuses` scripts the push service's status per subscription endpoint.
  */
-export function startApp(options: { now?: string } = {}) {
+export function startApp(
+  options: { now?: string; pushStatuses?: Record<string, number> } = {},
+) {
   const clock = fixedClock(options.now ?? "2026-11-03T12:00:00Z");
-  const push = recordingPushSender();
+  const push = recordingPushSender(options.pushStatuses);
   const worker = createWorker({ clock, push });
 
   return {

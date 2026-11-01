@@ -22,9 +22,17 @@ export interface PushSubscription {
   keys: { p256dh: string; auth: string };
 }
 
+/**
+ * The push service's answer to one send. `status` is its HTTP status: 201 means
+ * accepted, and 404 or 410 means the subscription is gone and should be deleted.
+ */
+export interface PushResult {
+  status: number;
+}
+
 /** Delivers one push payload to one subscription. */
 export interface PushSender {
-  send(subscription: PushSubscription, payload: string): Promise<void>;
+  send(subscription: PushSubscription, payload: string): Promise<PushResult>;
 }
 
 export const systemClock: Clock = {

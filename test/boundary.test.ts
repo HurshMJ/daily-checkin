@@ -36,6 +36,22 @@ describe("Worker boundary", () => {
     expect(app.push.sent).toEqual([]);
   });
 
+  it("lets a test script the push service's status for one endpoint", async () => {
+    const gone = { endpoint: "https://push.example/gone", keys: { p256dh: "k", auth: "a" } };
+    const live = { endpoint: "https://push.example/live", keys: { p256dh: "k", auth: "a" } };
+    const app = startApp({ pushStatuses: { [gone.endpoint]: 410 } });
+
+    const goneResult = await app.push.send(gone, '{"title":"one"}');
+    const liveResult = await app.push.send(live, '{"title":"two"}');
+
+    expect(goneResult).toEqual({ status: 410 });
+    expect(liveResult).toEqual({ status: 201 });
+    expect(app.push.sent).toEqual([
+      { subscription: gone, payload: '{"title":"one"}' },
+      { subscription: live, payload: '{"title":"two"}' },
+    ]);
+  });
+
   it("returns 404 for unknown pages", async () => {
     const app = startApp();
 
@@ -55,6 +71,9 @@ describe("clean database per test", () => {
     expect(results).toHaveLength(1);
   });
 
+  // Proves isolation only when it runs after "writes a row in one test" above,
+  // which Vitest does by default (tests in a file run in order). Run on its own
+  // with -t, it passes without proving anything.
   it("does not see that row in the next test", async () => {
     const { results } = await env.DB.prepare("SELECT * FROM scheduler_state").all();
     expect(results).toEqual([]);
