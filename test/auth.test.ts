@@ -110,6 +110,35 @@ describe("password rules", () => {
     expect(exact.status).toBe(302);
   });
 
+  it("logs in when the password is typed in the other Unicode normalisation form", async () => {
+    const nfc = "café crème brûlée".normalize("NFC");
+    const nfd = nfc.normalize("NFD");
+    expect(nfd).not.toBe(nfc);
+
+    const createdNfc = await submitSetup({ username: "Alice", password: nfc, colour: "blue" });
+    expect(createdNfc.response.status).toBe(302);
+    const typedNfd = await createdNfc.app.device().post("/login", { username: "Alice", password: nfd });
+    expect(typedNfd.status).toBe(302);
+
+    const createdNfd = await submitSetup({ username: "Bob", password: nfd, colour: "blue" });
+    expect(createdNfd.response.status).toBe(302);
+    const typedNfc = await createdNfd.app.device().post("/login", { username: "Bob", password: nfc });
+    expect(typedNfc.status).toBe(302);
+  });
+
+  it("judges the length on the NFC form", async () => {
+    // 128 code points in NFC; each é becomes e plus a combining accent in NFD.
+    const nfc = "é".repeat(10) + "a".repeat(118);
+    const nfd = nfc.normalize("NFD");
+    expect([...nfc].length).toBe(128);
+    expect([...nfd].length).toBe(138);
+
+    const { app, response } = await submitSetup({ username: "Alice", password: nfd, colour: "blue" });
+    expect(response.status).toBe(302);
+    const login = await app.device().post("/login", { username: "Alice", password: nfd });
+    expect(login.status).toBe(302);
+  });
+
   it("never echoes the password back on an error", async () => {
     const { html } = await submitSetup({ username: "Al", password: "secret phrase here", colour: "blue" });
 

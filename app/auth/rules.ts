@@ -13,8 +13,24 @@ export function usernameKey(raw: string): string {
   return normaliseUsername(raw).toLowerCase();
 }
 
+/**
+ * The password as it is checked and hashed: NFC-normalised, so the same
+ * password typed on two keyboards matches. Nothing is trimmed.
+ */
+export function normalisePassword(raw: string): string {
+  return raw.normalize("NFC");
+}
+
+/** The longest password accepted, in code points of the NFC form. */
+export const MAX_PASSWORD_LENGTH = 128;
+
 function codePoints(text: string): number {
   return [...text].length;
+}
+
+/** True when a normalised password is longer than any login can have. */
+export function passwordTooLong(password: string): boolean {
+  return codePoints(password) > MAX_PASSWORD_LENGTH;
 }
 
 // Control characters (Cc, such as tab and newline) and invisible format
@@ -30,12 +46,12 @@ export function usernameError(username: string): string | null {
 }
 
 /**
- * Returns an error message for the password field, or null when it is fine.
- * The password is taken as typed: spaces count and nothing is trimmed.
+ * Returns an error message for the normalised password field, or null when it
+ * is fine. Spaces count and nothing is trimmed.
  */
 export function passwordError(password: string, username: string): string | null {
   const length = codePoints(password);
-  if (length < 12 || length > 128) return "Use 12 to 128 characters.";
+  if (length < 12 || length > MAX_PASSWORD_LENGTH) return "Use 12 to 128 characters.";
   if (password.toLowerCase() === username.toLowerCase()) {
     return "Choose a password that is not your username.";
   }
@@ -58,7 +74,7 @@ export function validateNewLogin(
   form: FormData,
 ): { ok: true; value: NewLoginForm } | { ok: false; errors: NewLoginErrors } {
   const username = normaliseUsername(String(form.get("username") ?? ""));
-  const password = String(form.get("password") ?? "");
+  const password = normalisePassword(String(form.get("password") ?? ""));
   const colour = form.get("colour");
 
   const errors: NewLoginErrors = {};
