@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 15
     # The Cloudflare secrets are set only on the three steps that talk to
     # Cloudflare, so dependency install scripts, typecheck and tests never see
-    # the deploy token.
+    # the deploy token. The smoke login's credentials go only to the last step.
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -65,3 +65,56 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: npx wrangler deploy
+
+      # Logs in as the dedicated smoke-test login (in no Group) on the deployed
+      # Worker. It runs after Deploy, so a red step here means the new code is
+      # already live and broken: roll back or fix forward (README, Deploying).
+      - name: Smoke login
+        env:
+          APP_URL: https://daily-checkin.hurshm05.workers.dev
+          SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
+          SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=0
+          for name in SMOKE_USERNAME SMOKE_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::GitHub secret $name is not set. See README, Deploying, Smoke login."
+              missing=1
+            fi
+          done
+          [ "$missing" -eq 0 ] || exit 1
+
+          headers=$(mktemp)
+          body=$(mktemp)
+          # The password reaches curl on stdin (printf is a shell builtin), never
+          # as a process argument.
+          printf '%s' "$SMOKE_PASSWORD" | curl --silent --show-error --max-time 30 \
+            --output /dev/null --dump-header "$headers" \
+            --header "Origin: $APP_URL" \
+            --data-urlencode "username=$SMOKE_USERNAME" \
+            --data-urlencode "password@-" \
+            "$APP_URL/login"
+          status=$(head -n1 "$headers" | tr -d '\r' | cut -d' ' -f2)
+          location=$(grep -i '^location:' "$headers" | tr -d '\r' | cut -d' ' -f2 || true)
+          cookie=$(grep -i '^set-cookie: __Host-session=' "$headers" | head -n1 | sed -E 's/^[^:]*: ([^;]*);.*/\1/' || true)
+          if [ "$status" != "302" ] || [ "$location" != "/" ] || [ -z "$cookie" ]; then
+            echo "::error::Smoke login failed: POST /login answered $status, Location '$location', session cookie $([ -n "$cookie" ] && echo set || echo missing)."
+            exit 1
+          fi
+
+          status=$(curl --silent --show-error --max-time 30 --output "$body" --write-out '%{http_code}' \
+            --header "Cookie: $cookie" "$APP_URL/")
+          if [ "$status" != "200" ] || ! grep -q "Create a Group" "$body"; then
+            echo "::error::Smoke login failed: GET / with the session answered $status without the empty Tonight."
+            exit 1
+          fi
+
+          # End the smoke session so they do not pile up.
+          status=$(curl --silent --show-error --max-time 30 --output /dev/null --write-out '%{http_code}' \
+            --request POST --header "Origin: $APP_URL" --header "Cookie: $cookie" "$APP_URL/logout")
+          if [ "$status" != "302" ]; then
+            echo "::error::Smoke logout failed: POST /logout answered $status."
+            exit 1
+          fi
+          echo "Smoke login passed."

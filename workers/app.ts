@@ -1,5 +1,6 @@
 import { createRequestHandler, RouterContextProvider } from "react-router";
 
+import { refuseCrossOrigin } from "../app/auth/request";
 import { appContext, productionServices, type Services } from "../app/services";
 
 const requestHandler = createRequestHandler(
@@ -16,6 +17,8 @@ const requestHandler = createRequestHandler(
 export function createWorker(services: Services) {
   return {
     async fetch(request, env, ctx) {
+      const refused = refuseCrossOrigin(request);
+      if (refused) return refused;
       const context = new RouterContextProvider(
         new Map([[appContext, { ...services, env, ctx }]]),
       );

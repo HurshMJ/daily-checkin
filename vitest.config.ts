@@ -13,8 +13,13 @@ export default defineConfig(async () => {
       cloudflareTest({
         wrangler: { configPath: "./wrangler.jsonc" },
         miniflare: {
-          // Read by test/setup.ts to rebuild the schema before every test.
-          bindings: { TEST_MIGRATIONS: migrations },
+          bindings: {
+            // Read by test/setup.ts to rebuild the schema before every test.
+            TEST_MIGRATIONS: migrations,
+            // Real PBKDF2, but cheap enough for many logins per test run.
+            // Production uses the 100000 in wrangler.jsonc.
+            PBKDF2_ITERATIONS: "1000",
+          },
         },
       }),
     ],

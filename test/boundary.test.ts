@@ -6,14 +6,23 @@ import { productionServices } from "~/services";
 import { startApp } from "./harness";
 
 describe("Worker boundary", () => {
-  it("serves the home page through fetch", async () => {
+  it("serves pages through fetch", async () => {
     const app = startApp();
 
-    const response = await app.fetch("/");
+    const response = await app.fetch("/login");
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Type")).toMatch(/text\/html/);
     expect(await response.text()).toContain("Daily Check-in");
+  });
+
+  it("sends a logged-out visit to Tonight to /login", async () => {
+    const app = startApp();
+
+    const response = await app.fetch("/");
+
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/login");
   });
 
   it("reports the injected clock's time and a reachable database", async () => {

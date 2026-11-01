@@ -14,6 +14,7 @@
     "typecheck": "wrangler types && react-router typegen && tsc -b",
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
+    "operator:setup-link": "node scripts/setup-link.ts",
     "postinstall": "wrangler types"
   },
   "dependencies": {
