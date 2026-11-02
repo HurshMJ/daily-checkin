@@ -1,0 +1,70 @@
+/*
+ * Couch Co-op design tokens: the one owner of every colour, size and radius.
+ * Colours are literal #rrggbb values so test/theme-contrast.test.ts can check
+ * them. Only :root custom properties belong here; every rule lives in app.css.
+ */
+:root {
+  color-scheme: dark;
+
+  /* Base palette */
+  --bg: #1a1220;
+  --surface: #261b2f;
+  --row: #33253e;
+  --line: #45344f;
+  --text: #f7eff8;
+  --text-secondary: #c3b2c8;
+  --accent: #d8b4fe;
+  --on-fill: #1a1220;
+  --no-answer: #9a87a4;
+
+  /* Availability */
+  --yes: #8ceaa6;
+  --maybe: #f9d280;
+  --no: #fb9795;
+
+  /* States */
+  --primary-pressed: #b996e6;
+  --secondary-pressed: #33253e;
+  --destructive-pressed: #3a2230;
+  --disabled-fill: #2e2236;
+  --disabled-text: #8f7e98;
+
+  /* Avatar colours, named as stored in D1 */
+  --avatar-blue: #6899e2;
+  --avatar-sky: #58a1cf;
+  --avatar-cyan: #3d9bac;
+  --avatar-indigo: #8489da;
+  --avatar-violet: #ab8be3;
+  --avatar-purple: #c77dd8;
+  --avatar-pink: #bf5da2;
+  --avatar-slate: #8e99ab;
+
+  /* Typography */
+  --font-display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --font-body: "Nunito Sans", system-ui, sans-serif;
+  --size-title: 2.5rem;
+  --size-heading: 1.5rem;
+  --size-banner: 1.25rem;
+  --size-body: 1.0625rem;
+  --size-secondary: 0.9375rem;
+  --line-height-text: 1.5;
+  --line-height-heading: 1.15;
+
+  /* Radii */
+  --radius-card: 28px;
+  --radius-tile: 24px;
+  --radius-row: 18px;
+  --radius-pill: 999px;
+
+  /* Sizes */
+  --control-height: 52px;
+  --control-height-small: 44px;
+  --answer-tile-height: 76px;
+  --stripe-width: 6px;
+  --border-width: 2px;
+  --focus-width: 2px;
+  --focus-offset: 2px;
+
+  /* Motion */
+  --duration: 150ms;
+}
