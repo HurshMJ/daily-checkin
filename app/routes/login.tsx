@@ -28,24 +28,43 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 export default function Login({ actionData }: Route.ComponentProps) {
   return (
-    <main>
-      <h1>Log in</h1>
-      {actionData?.error ? <p role="alert">{actionData.error}</p> : null}
-      <Form method="post">
-        <p>
-          <label htmlFor="username">Username</label>
-          <br />
-          <input id="username" name="username" autoComplete="username" required defaultValue={actionData?.username} />
-        </p>
-        <p>
-          <label htmlFor="password">Password</label>
-          <br />
-          <input id="password" name="password" type="password" autoComplete="current-password" required />
-        </p>
-        <p>
-          <button type="submit">Log in</button>
-        </p>
+    <main className="page">
+      <header className="login-header">
+        <h1>Daily Check-in</h1>
+        <p className="login-tagline">Who's on tonight?</p>
+      </header>
+      {actionData?.error ? (
+        <div className="notice-error" role="alert">
+          <p className="notice-title">Can't log in</p>
+          <p>{actionData.error}</p>
+        </div>
+      ) : null}
+      <Form method="post" className="page-form">
+        <div className="field">
+          <label className="field-label" htmlFor="username">Username</label>
+          <input
+            className="field-input"
+            id="username"
+            name="username"
+            autoComplete="username"
+            required
+            defaultValue={actionData?.username}
+          />
+        </div>
+        <div className="field">
+          <label className="field-label" htmlFor="password">Password</label>
+          <input
+            className="field-input"
+            id="password"
+            name="password"
+            type="password"
+            autoComplete="current-password"
+            required
+          />
+        </div>
+        <button className="btn-primary" type="submit">Log in</button>
       </Form>
+      <p className="login-hint">No login yet? Ask a friend in your Group for an Invite.</p>
     </main>
   );
 }

@@ -27,6 +27,10 @@ export default defineConfig(async () => {
     test: {
       include: ["test/**/*.test.ts"],
       setupFiles: ["./test/setup.ts"],
+      // Vitest blanks every CSS import by default. Let the app's stylesheets
+      // through, so the root route's ?url import yields a real href and
+      // test/theme-contrast.test.ts can read the tokens file with ?raw.
+      css: { include: [/app\/styles\/[^/]+\.css/] },
     },
   };
 });

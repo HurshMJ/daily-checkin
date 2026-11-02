@@ -8,10 +8,31 @@ import {
 } from "react-router";
 
 import { sessionMiddleware } from "./auth/request";
+import appStylesHref from "./styles/app.css?url";
 
 import type { Route } from "./+types/root";
 
 export const middleware: Route.MiddlewareFunction[] = [sessionMiddleware];
+
+// The latin files only: latin-ext loads on demand through unicode-range.
+const PRELOADED_FONTS = [
+  "/fonts/fredoka-600-latin.woff2",
+  "/fonts/nunito-sans-400-latin.woff2",
+  "/fonts/nunito-sans-700-latin.woff2",
+];
+
+// The one global stylesheet, linked explicitly so every page gets exactly one
+// <link>, plus preloads for the fonts it uses first.
+export const links: Route.LinksFunction = () => [
+  ...PRELOADED_FONTS.map((href) => ({
+    rel: "preload",
+    as: "font",
+    type: "font/woff2",
+    href,
+    crossOrigin: "anonymous" as const,
+  })),
+  { rel: "stylesheet", href: appStylesHref },
+];
 
 export function Layout({ children }: { children: React.ReactNode }) {
   return (

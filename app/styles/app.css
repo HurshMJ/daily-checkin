@@ -1,0 +1,296 @@
+/*
+ * The one global stylesheet, loaded once by the root route. Every value comes
+ * from tokens.css. Classes are kebab-case and prefixed by their component;
+ * state reaches the CSS only through aria-*, disabled and data-* attributes.
+ * Nothing here moves: only colours and opacity fade, so reduced motion needs
+ * no override.
+ */
+@import "./tokens.css";
+
+/* Fonts: latin is preloaded by the root route; latin-ext loads only when a
+   page uses one of its characters. */
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/fredoka-600-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Fredoka";
+  font-style: normal;
+  font-weight: 600;
+  font-display: swap;
+  src: url("/fonts/fredoka-600-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/nunito-sans-400-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/nunito-sans-400-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/nunito-sans-700-latin.woff2") format("woff2");
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329,
+    U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+@font-face {
+  font-family: "Nunito Sans";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/nunito-sans-700-latin-ext.woff2") format("woff2");
+  unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329,
+    U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C4, U+2113, U+2C60-2C7F, U+A720-A7FF;
+}
+
+/* Base */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  background: var(--bg);
+  color: var(--text);
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-body);
+  font-size: var(--size-body);
+  line-height: var(--line-height-text);
+  overflow-wrap: break-word;
+}
+
+h1,
+h2,
+h3 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+  line-height: var(--line-height-heading);
+  text-wrap: balance;
+}
+
+h1 {
+  font-size: var(--size-title);
+}
+
+h2 {
+  font-size: var(--size-heading);
+}
+
+h3 {
+  font-size: var(--size-banner);
+}
+
+p {
+  margin: 0;
+}
+
+a {
+  color: var(--accent);
+  font-weight: 700;
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: var(--focus-width) solid var(--accent);
+  outline-offset: var(--focus-offset);
+}
+
+a,
+button,
+input {
+  transition:
+    background-color var(--duration) ease,
+    color var(--duration) ease,
+    border-color var(--duration) ease,
+    opacity var(--duration) ease;
+}
+
+/* Page: the single phone-width column every screen sits in. */
+.page {
+  display: grid;
+  gap: 1.5rem;
+  width: 100%;
+  max-width: 30rem;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 2rem;
+}
+
+.page-form {
+  display: grid;
+  gap: 0.75rem;
+}
+
+/* Buttons: full-width pills. Pick one variant class per button. */
+.btn-primary,
+.btn-secondary,
+.btn-destructive {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 1.375rem;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  font-size: var(--size-body);
+  font-weight: 700;
+  line-height: var(--line-height-heading);
+  text-align: center;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: var(--on-fill);
+}
+
+.btn-primary:active {
+  background: var(--primary-pressed);
+}
+
+.btn-secondary {
+  background: transparent;
+  border-color: var(--control-border);
+  color: var(--text);
+}
+
+.btn-secondary:active {
+  background: var(--secondary-pressed);
+}
+
+.btn-destructive {
+  background: transparent;
+  border-color: var(--no);
+  color: var(--no);
+}
+
+.btn-destructive:active {
+  background: var(--destructive-pressed);
+}
+
+.btn-primary:disabled,
+.btn-secondary:disabled,
+.btn-destructive:disabled {
+  background: var(--disabled-fill);
+  border-color: var(--disabled-fill);
+  color: var(--disabled-text);
+  cursor: not-allowed;
+}
+
+/* Fields: a bold label above a pill input, a secondary hint and an error line below. */
+.field {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.field-label {
+  font-weight: 700;
+}
+
+.field-input {
+  width: 100%;
+  min-height: var(--control-height);
+  padding: 0 1.25rem;
+  border: var(--border-width) solid var(--control-border);
+  border-radius: var(--radius-pill);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.field-input[aria-invalid="true"] {
+  border-color: var(--no);
+}
+
+.field-input:disabled {
+  background: var(--disabled-fill);
+  color: var(--disabled-text);
+}
+
+.field-hint {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
+
+.field-error {
+  color: var(--no);
+  font-size: var(--size-secondary);
+  font-weight: 700;
+}
+
+/* Notices: a row-colour box with a stripe, a display-face title and a body line.
+   Pick one variant class per notice. */
+.notice-info,
+.notice-warning,
+.notice-error {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 1rem;
+  border-left: var(--stripe-width) solid var(--accent);
+  border-radius: var(--radius-row);
+  background: var(--row);
+}
+
+.notice-warning {
+  border-left-color: var(--maybe);
+}
+
+.notice-error {
+  border-left-color: var(--no);
+}
+
+.notice-title {
+  font-family: var(--font-display);
+  font-size: var(--size-banner);
+  font-weight: 600;
+  line-height: var(--line-height-heading);
+}
+
+/* Login */
+.login-header {
+  display: grid;
+  gap: 0.375rem;
+  padding-top: 1.5rem;
+}
+
+.login-tagline,
+.login-hint {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
