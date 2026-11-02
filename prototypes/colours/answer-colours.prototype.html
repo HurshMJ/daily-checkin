@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1220">
+<title>Answer and avatar colours</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap" rel="stylesheet">
+<style>
+/* PROTOTYPE, throwaway. Ticket "Yes, Maybe, No and avatar colours on the dark theme".
+   Direction C Couch Co-op surfaces are fixed; only the answer and avatar shades change
+   per candidate palette. Layout idea: sticky palette and vision switches, then a real
+   Board, every combination, the Setup Link picker, and the live checks. */
+:root {
+  --bg: #1a1220; --surface: #261b2f; --row: #33253e; --line: #45344f;
+  --text: #f7eff8; --muted: #c3b2c8; --accent: #d8b4fe; --none: #9a87a4; --on-fill: #1a1220;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.5 var(--body); }
+#view { max-width: 430px; margin: 0 auto; padding: 0 16px 48px; display: grid; gap: 22px; }
+.controls { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 12px 16px 10px; border-bottom: 1px solid var(--line); display: grid; gap: 8px; max-width: 430px; margin: 0 auto; }
+.seg { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.seg b { font: 600 0.8125rem var(--display); color: var(--muted); min-width: 52px; }
+.seg button { min-height: 40px; padding: 0 14px; border-radius: 999px; border: 2px solid var(--line); background: var(--surface); color: var(--text); font: 600 0.9375rem var(--display); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+.seg.vision button { min-height: 36px; padding: 0 10px; font-size: 0.8125rem; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+h1 { font: 700 2rem/1.1 var(--display); margin: 18px 0 0; }
+h2 { font: 600 1.375rem/1.15 var(--display); margin: 0; }
+h3 { font: 600 1.0625rem var(--display); margin: 0; }
+.lead { color: var(--muted); margin: 4px 0 0; font-size: 0.9375rem; }
+.answers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.answers span { min-height: 64px; border-radius: 22px; display: grid; place-items: center; font: 600 1.1875rem var(--display); color: var(--on-fill); }
+.board { background: var(--surface); border-radius: 28px; overflow: hidden; }
+.banner { padding: 12px 20px; font: 700 1.25rem var(--display); display: flex; justify-content: space-between; align-items: center; color: var(--on-fill); }
+.banner.needs { background: var(--row); color: var(--text); }
+.banner small { font: 600 0.875rem var(--body); }
+.board-body { padding: 14px 14px 16px; display: grid; gap: 12px; }
+ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+li.r { display: grid; grid-template-columns: auto 1fr auto; column-gap: 12px; align-items: center; background: var(--row); border-radius: 18px; padding: 11px 16px 11px 14px; border-left: 6px solid var(--none); }
+li.r.none { background: transparent; border: 2px dashed var(--none); border-left-width: 6px; }
+.dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+.name { font-weight: 700; }
+.name small { font-weight: 400; color: var(--muted); }
+.word { font: 600 1.0625rem var(--display); }
+li.r.none .word { color: var(--muted); font-weight: 500; }
+.note { grid-column: 2 / 4; color: var(--muted); font-size: 0.9375rem; }
+.matrix { display: grid; grid-template-columns: auto repeat(4, 1fr); gap: 6px; align-items: center; font-size: 0.8125rem; }
+.matrix .h { color: var(--muted); font: 600 0.8125rem var(--display); text-align: center; }
+.matrix .lab { display: flex; gap: 6px; align-items: center; font-weight: 600; }
+.cell { background: var(--row); border-radius: 10px; border-left: 5px solid; padding: 6px 4px 6px 6px; display: flex; gap: 5px; align-items: center; min-height: 36px; }
+.cell.none { background: transparent; border: 2px dashed var(--none); border-left-width: 5px; }
+.cell .dot { width: 12px; height: 12px; flex: none; }
+.cell span:last-child { font: 600 0.8125rem var(--display); white-space: nowrap; }
+.picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.picker div { display: grid; justify-items: center; gap: 4px; padding: 10px 4px; border-radius: 16px; border: 2px solid var(--line); font-size: 0.875rem; }
+.picker .dot { width: 26px; height: 26px; }
+table { width: 100%; border-collapse: collapse; font-size: 0.8125rem; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 600; }
+td.n { text-align: right; }
+.ok { color: var(--text); } .bad { color: #ffb4a8; font-weight: 700; }
+.sw { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 4px; border: 1px solid #fff4; }
+.scroll { overflow-x: auto; }
+.desc { color: var(--muted); font-size: 0.9375rem; margin: 0; }
+section { display: grid; gap: 12px; }
+</style>
+</head>
+<body>
+<div class="controls">
+  <div class="seg" id="pal"><b>Palette</b></div>
+</div>
+<div id="view"></div>
+<script>
+const PALETTES = {
+  bright: { label: 'Bright', desc: 'Vivid answers and saturated mid-tone avatars. The most contrast between the two groups.',
+    yes: '#62eb80', maybe: '#ffc53c', no: '#ff7a73',
+    avatar: { blue: '#438af1', sky: '#37a3df', cyan: '#1ca3b9', indigo: '#7177ea', violet: '#a174f0', purple: '#c55ee3', pink: '#c158ae', slate: '#7e8ea2' } },
+  soft: { label: 'Soft', desc: 'Chosen. Pastel answers and gentler avatars, closest to the warm Couch Co-op mood.',
+    yes: '#8ceaa6', maybe: '#f9d280', no: '#fb9795',
+    avatar: { blue: '#6899e2', sky: '#58a1cf', cyan: '#3d9bac', indigo: '#8489da', violet: '#ab8be3', purple: '#c77dd8', pink: '#bf5da2', slate: '#8e99ab' } },
+  signal: { label: 'Signal', desc: 'Traffic-light answers at full strength and deeper avatars. Answers jump out most; avatars sit back.',
+    yes: '#5ef56d', maybe: '#ffd12e', no: '#ff6853',
+    avatar: { blue: '#407aea', sky: '#2494d9', cyan: '#0097b3', indigo: '#6967e1', violet: '#9b61ea', purple: '#bd4bd6', pink: '#bb52a8', slate: '#768193' } }
+};
+const VISIONS = { normal: 'Normal', protan: 'Protan', deutan: 'Deutan', tritan: 'Tritan' };
+const NEUTRAL = { bg: '#1a1220', surface: '#261b2f', row: '#33253e', text: '#f7eff8', muted: '#c3b2c8', accent: '#d8b4fe', none: '#9a87a4', onFill: '#1a1220' };
+const WORD = { yes: 'Yes', maybe: 'Maybe', no: 'No' };
+const NAMES = { blue: 'Ana', sky: 'Ben', cyan: 'Cleo', indigo: 'Dev', violet: 'You', purple: 'Fin', pink: 'Gia', slate: 'Hugo' };
+const MATRICES = {
+  protan: [[0.152286, 1.052583, -0.204868], [0.114503, 0.786281, 0.099216], [-0.003882, -0.048116, 1.051998]],
+  deutan: [[0.367322, 0.860646, -0.227968], [0.280085, 0.672501, 0.047413], [-0.011820, 0.042940, 0.968881]],
+  tritan: [[1.255528, -0.076749, -0.178779], [-0.078411, 0.930809, 0.147602], [0.004733, 0.691367, 0.302900]]
+};
+
+// WCAG 2.2 contrast and OKLab distance under simulated colour vision.
+const lin = c => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+const rgb = h => [1, 3, 5].map(i => lin(parseInt(h.slice(i, i + 2), 16) / 255));
+const lum = h => { const [r, g, b] = rgb(h); return 0.2126 * r + 0.7152 * g + 0.0722 * b; };
+const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return (x + 0.05) / (y + 0.05); };
+function oklab([r, g, b]) {
+  const l = Math.cbrt(0.4122214708 * r + 0.5363325363 * g + 0.0514459929 * b);
+  const m = Math.cbrt(0.2119034982 * r + 0.6806995451 * g + 0.1073969566 * b);
+  const s = Math.cbrt(0.0883024619 * r + 0.2817188376 * g + 0.6299787005 * b);
+  return [0.2104542553 * l + 0.7936177850 * m - 0.0040720468 * s, 1.9779984951 * l - 2.4285922050 * m + 0.4505937099 * s, 0.0259040371 * l + 0.7827717662 * m - 0.8086757660 * s];
+}
+const sim = (h, M) => { const c = rgb(h); return M ? M.map(r => Math.min(1, Math.max(0, r[0] * c[0] + r[1] * c[1] + r[2] * c[2]))) : c; };
+const dist = (a, b, M) => { const p = oklab(sim(a, M)), q = oklab(sim(b, M)); return 100 * Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]); };
+
+function checks(P) {
+  const N = NEUTRAL, rows = [];
+  const add = (what, fg, bg, need) => rows.push({ what, fg, bg, need, r: ratio(fg, bg) });
+  for (const s of ['bg', 'surface', 'row']) { add(`Text on ${s}`, N.text, N[s], 4.5); add(`Secondary text on ${s}`, N.muted, N[s], 4.5); }
+  add('Lavender link on surface', N.accent, N.surface, 4.5);
+  add('Focus outline on bg', N.accent, N.bg, 3);
+  add('"No answer yet" dashes on surface', N.none, N.surface, 3);
+  for (const k of ['yes', 'maybe', 'no']) {
+    add(`${WORD[k]} word on row`, P[k], N.row, 4.5);
+    add(`${WORD[k]} word on surface`, P[k], N.surface, 4.5);
+    add(`${WORD[k]} stripe next to row`, P[k], N.row, 3);
+    add(`Dark text on ${WORD[k]} fill`, N.onFill, P[k], 4.5);
+  }
+  for (const [a, h] of Object.entries(P.avatar)) for (const s of ['bg', 'surface', 'row']) add(`${a} dot on ${s}`, h, N[s], 3);
+  return rows;
+}
+function confusion(P) {
+  return Object.entries(P.avatar).map(([a, h]) => ({ a, h, d: Object.fromEntries(Object.keys(VISIONS).map(v =>
+    [v, Math.min(...['yes', 'maybe', 'no'].map(k => dist(h, P[k], MATRICES[v])))])) }));
+}
+
+const state = { pal: 'soft' };
+function render() {
+  const P = PALETTES[state.pal];
+  const stripe = a => (a ? P[a] : NEUTRAL.none);
+  const row = (c, a, note) => `<li class="r ${a ? '' : 'none'}" style="${a ? `border-left-color:${P[a]}` : ''}">
+    <span class="dot" style="background:${P.avatar[c]}"></span>
+    <span class="name">${NAMES[c]} <small>${c}</small></span>
+    <span class="word" style="${a ? `color:${P[a]}` : ''}">${a ? WORD[a] : 'No answer yet'}</span>
+    ${note ? `<span class="note">${note}</span>` : ''}</li>`;
+  const board = (name, banner, bg, count, members) => `<div class="board">
+    <div class="banner ${bg ? '' : 'needs'}" style="${bg ? `background:${bg}` : ''}"><span>${banner}</span><small>${count}</small></div>
+    <div class="board-body"><h3>${name}</h3><ul>${members.map(m => row(...m)).join('')}</ul></div></div>`;
+  const cks = checks(P), fails = cks.filter(c => c.r < c.need).length;
+  document.getElementById('view').innerHTML = `
+  <header><h1>${P.label}</h1><p class="lead">${P.desc}</p></header>
+  <section><h2>Check-in</h2><div class="answers">${['yes', 'maybe', 'no'].map(k => `<span style="background:${P[k]}">${WORD[k]}</span>`).join('')}</div></section>
+  <section><h2>Boards</h2>
+  ${board('Thursday Squad', 'Game On', P.yes, '4 of 3 Yes so far', [['violet', 'yes', 'on after 9:30'], ['pink', 'yes', 'bringing the new map pack'], ['cyan', 'yes'], ['sky', 'yes'], ['indigo', 'maybe', 'depends when work ends'], ['purple', 'no', 'family dinner'], ['slate', null], ['blue', null]])}
+  ${board('Saturday Raid 🐉', 'Game Off', P.no, '2 of 4 Yes so far', [['blue', 'yes'], ['slate', 'yes'], ['violet', 'maybe'], ['pink', 'no'], ['cyan', 'no', 'travelling'], ['sky', null]])}
+  ${board('Sunday Chill', 'Needs 2 more Yes', null, '1 of 3 Yes so far', [['purple', 'yes'], ['indigo', 'maybe'], ['violet', null]])}
+  </section>
+  <section><h2>Every combination</h2><p class="desc">Each avatar colour beside each answer.</p>
+  <div class="matrix"><span></span>${['Yes', 'Maybe', 'No', 'None'].map(h => `<span class="h">${h}</span>`).join('')}
+  ${Object.keys(P.avatar).map(c => `<span class="lab"><span class="dot" style="background:${P.avatar[c]};width:12px;height:12px"></span>${c}</span>` +
+    ['yes', 'maybe', 'no', null].map(a => `<span class="cell ${a ? '' : 'none'}" style="border-left-color:${stripe(a)}"><span class="dot" style="background:${P.avatar[c]}"></span><span style="color:${a ? P[a] : NEUTRAL.muted}">${a ? WORD[a] : 'None'}</span></span>`).join('')).join('')}
+  </div></section>
+  <section><h2>Setup Link colour picker</h2><div class="picker">${Object.entries(P.avatar).map(([c, h]) => `<div><span class="dot" style="background:${h}"></span>${c[0].toUpperCase() + c.slice(1)}</div>`).join('')}</div></section>
+  <section><h2>Accessibility checks</h2>
+  <p class="desc">${fails ? `<span class="bad">${fails} pair${fails > 1 ? 's' : ''} below the bar.</span>` : 'Every pair meets the bar: 4.5:1 for text, 3:1 for stripes, dashes, focus and dots.'}</p>
+  <div class="scroll"><table><thead><tr><th>Pair</th><th>Colours</th><th class="n">Ratio</th><th class="n">Needs</th></tr></thead><tbody>
+  ${cks.map(c => `<tr><td>${c.what}</td><td><span class="sw" style="background:${c.fg}"></span><span class="sw" style="background:${c.bg}"></span></td><td class="n ${c.r < c.need ? 'bad' : 'ok'}">${c.r.toFixed(2)}</td><td class="n">${c.need}</td></tr>`).join('')}
+  </tbody></table></div>
+  <p class="desc">Answer shades: Yes ${P.yes}, Maybe ${P.maybe}, No ${P.no}. Surfaces are fixed from Couch Co-op.</p>
+  </section>`;
+  for (const [id, set, key] of [['pal', PALETTES, 'pal']])
+    document.querySelectorAll(`#${id} button`).forEach(b => b.setAttribute('aria-pressed', b.dataset.v === state[key]));
+}
+function bar(id, set, key) {
+  const el = document.getElementById(id);
+  for (const [v, x] of Object.entries(set)) {
+    const b = document.createElement('button'); b.dataset.v = v; b.textContent = typeof x === 'string' ? x : x.label;
+    b.onclick = () => { state[key] = v; if (key === 'pal') location.hash = v; render(); };
+    el.appendChild(b);
+  }
+}
+bar('pal', PALETTES, 'pal');
+function fromHash() { const h = location.hash.slice(1); if (PALETTES[h]) state.pal = h; render(); }
+window.addEventListener('hashchange', fromHash); fromHash();
+</script>
+</body>
+</html>
