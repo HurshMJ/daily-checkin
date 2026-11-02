@@ -4,8 +4,6 @@
  * them. Only :root custom properties belong here; every rule lives in app.css.
  */
 :root {
-  color-scheme: dark;
-
   /* Base palette */
   --bg: #1a1220;
   --surface: #261b2f;
