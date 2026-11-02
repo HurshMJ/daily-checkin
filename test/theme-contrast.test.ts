@@ -57,6 +57,20 @@ function customProperties(css: string): Map<string, string> {
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
+const LENGTH = /^-?\d*\.?\d+(px|rem|em|%)$/;
+const NUMBER = /^-?\d*\.?\d+$/;
+const DURATION = /^\d*\.?\d+m?s$/;
+
+/**
+ * A custom property is a colour unless it is a font stack (named --font-*), a
+ * length, a number or a duration. Every colour must then be literal #rrggbb,
+ * so a named colour, hwb() or var() cannot slip past the contrast checks.
+ */
+function isColourToken(name: string, value: string): boolean {
+  if (name.startsWith("--font-")) return false;
+  return ![LENGTH, NUMBER, DURATION].some((form) => form.test(value));
+}
+
 function luminance(hex: string): number {
   const channels = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
   const [r, g, b] = channels.map((c) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
@@ -90,6 +104,16 @@ describe("contrast helper", () => {
     expect(HEX.test(fake.get("--bad") ?? "")).toBe(false);
     expect(HEX.test(fake.get("--short") ?? "")).toBe(false);
   });
+
+  it("treats every token that is not a font stack, length, number or duration as a colour", () => {
+    const fake = customProperties(
+      `:root { --named: red; --wide: hwb(270 20% 10%); --font-x: "A B", system-ui, sans-serif;
+        --size-x: 1.25rem; --radius-x: 28px; --pill: 999px; --ratio: 1.5; --wait: 150ms; }`,
+    );
+    const colours = [...fake].filter(([name, value]) => isColourToken(name, value)).map(([name]) => name);
+    expect(colours).toEqual(["--named", "--wide"]);
+    for (const name of colours) expect(fake.get(name)).not.toMatch(HEX);
+  });
 });
 
 describe("theme tokens", () => {
@@ -98,8 +122,7 @@ describe("theme tokens", () => {
     for (const name of colourNames) expect(() => colour(name), name).not.toThrow();
 
     for (const [name, value] of tokens) {
-      const looksLikeColour = /^(#|rgb|hsl|oklch|color|var\()/i.test(value);
-      if (looksLikeColour) expect(value, name).toMatch(HEX);
+      if (isColourToken(name, value)) expect(value, name).toMatch(HEX);
     }
   });
 
