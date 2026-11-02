@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1220">
+<title>Interface states and motion</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Nunito+Sans:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* PROTOTYPE, throwaway. Ticket "Interface states and motion". Couch Co-op, Soft palette,
+   chosen type scale and components. Layout idea: a live Check-in to feel the motion
+   and pending options, then every state laid out side by side. */
+:root {
+  --bg: #1a1220; --surface: #261b2f; --row: #33253e; --line: #45344f;
+  --text: #f7eff8; --muted: #c3b2c8; --accent: #d8b4fe; --on-fill: #1a1220;
+  --yes: #8ceaa6; --maybe: #f9d280; --no: #fb9795; --none: #9a87a4;
+  --disabled-text: #8f7e98; --disabled-fill: #2e2236;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", system-ui, sans-serif;
+  --dur: 150ms;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.5 var(--body); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.proto { background: #000; color: #fff; font: 0.8125rem/1.3 system-ui, sans-serif; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px 12px; position: sticky; top: 0; z-index: 3; }
+.proto label { display: flex; gap: 6px; align-items: center; }
+.proto select { font: inherit; padding: 6px; border-radius: 8px; background: #222; color: #fff; border: 1px solid #555; min-height: 36px; }
+main { max-width: 430px; margin: 0 auto; padding: 16px 16px 48px; display: grid; gap: 24px; }
+h1 { font: 600 2.5rem/1.15 var(--display); margin: 0; }
+h2 { font: 600 1.5rem/1.15 var(--display); margin: 0; }
+h3 { font: 600 1.25rem/1.15 var(--display); margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted); font-size: 0.9375rem; }
+section { display: grid; gap: 12px; }
+.card { background: var(--surface); border-radius: 28px; padding: 20px 16px; display: grid; gap: 14px; }
+.label { font: 700 0.875rem var(--body); color: var(--muted); text-transform: none; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: start; }
+.cell { display: grid; gap: 6px; }
+
+/* Buttons */
+.btn { min-height: 52px; padding: 0 18px; border-radius: 999px; border: 2px solid transparent; font: 700 1.0625rem var(--body); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; width: 100%; }
+.btn.primary { background: var(--accent); color: var(--on-fill); }
+.btn.secondary { background: transparent; border-color: var(--line); color: var(--text); }
+.btn.danger { background: transparent; border-color: var(--no); color: var(--no); }
+/* Pressed: darker fill, no movement */
+.btn.primary:active, .btn.primary.is-pressed { background: #b996e6; }
+.btn.secondary:active, .btn.secondary.is-pressed { background: var(--row); }
+.btn.danger:active, .btn.danger.is-pressed { background: #3a2230; }
+/* Disabled: fill and text dim, text still 3:1 */
+.btn:disabled, .btn.is-disabled { background: var(--disabled-fill); border-color: var(--line); color: var(--disabled-text); cursor: not-allowed; }
+/* Pending */
+.btn[aria-busy="true"] { cursor: progress; }
+.spin { width: 18px; height: 18px; border-radius: 50%; border: 3px solid currentColor; border-right-color: transparent; animation: spin 0.9s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.motion-none .spin { animation: none; border-right-color: currentColor; opacity: 0.6; }
+
+/* Fields */
+.field { display: grid; gap: 6px; }
+.field > span { font-weight: 700; }
+.field small { color: var(--muted); font-size: 0.9375rem; }
+input { min-height: 52px; border-radius: 999px; border: 2px solid var(--line); background: var(--bg); color: var(--text); font: 1.0625rem var(--body); padding: 0 20px; width: 100%; }
+input:disabled { color: var(--disabled-text); background: var(--disabled-fill); }
+.field.has-error input { border-color: var(--no); }
+.field .err { color: var(--no); font-size: 0.9375rem; font-weight: 700; }
+
+/* Answers */
+.answers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.ans { min-height: 76px; border-radius: 24px; border: 2px solid var(--line); background: var(--surface); color: var(--text); font: 600 1.25rem var(--display); cursor: pointer; display: grid; place-items: center; align-content: center; gap: 2px; position: relative; }
+.ans::before { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; }
+.ans.yes::before { border-color: var(--yes); } .ans.maybe::before { border-color: var(--maybe); } .ans.no::before { border-color: var(--no); }
+.ans:active { background: var(--row); }
+.ans[aria-pressed="true"] { color: var(--on-fill); }
+.ans[aria-pressed="true"]::before { background: var(--on-fill); border-color: var(--on-fill); }
+.ans[aria-pressed="true"].yes { background: var(--yes); border-color: var(--yes); }
+.ans[aria-pressed="true"].maybe { background: var(--maybe); border-color: var(--maybe); }
+.ans[aria-pressed="true"].no { background: var(--no); border-color: var(--no); }
+.ans.pending { opacity: 0.75; }
+.status-line { min-height: 1.5em; font-size: 0.9375rem; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+.status-line .spin { width: 14px; height: 14px; border-width: 2px; }
+
+/* Motion levels */
+.motion-subtle .ans, .motion-subtle .btn, .motion-subtle .banner, .motion-subtle .r { transition: background-color var(--dur) ease, color var(--dur) ease, border-color var(--dur) ease, opacity var(--dur) ease; }
+.motion-playful .ans, .motion-playful .btn, .motion-playful .banner, .motion-playful .r { transition: background-color 200ms ease, color 200ms ease, border-color 200ms ease, transform 200ms cubic-bezier(.3,1.6,.5,1); }
+.motion-playful .ans[aria-pressed="true"] { animation: pop 260ms cubic-bezier(.3,1.6,.5,1); }
+.motion-playful .banner.on { animation: drop 320ms cubic-bezier(.3,1.4,.5,1); }
+.motion-playful .ans:active, .motion-playful .btn:active { transform: scale(0.96); }
+@keyframes pop { 50% { transform: scale(1.06); } }
+@keyframes drop { from { transform: translateY(-100%); } }
+@media (prefers-reduced-motion: reduce) {
+  .motion-playful .ans[aria-pressed="true"], .motion-playful .banner.on { animation: none; }
+  .motion-playful .ans:active, .motion-playful .btn:active { transform: none; }
+  .spin { animation: none; border-right-color: currentColor; opacity: 0.6; }
+}
+
+/* Board bits */
+.board { background: var(--surface); border-radius: 28px; overflow: hidden; }
+.banner { padding: 12px 20px; font: 600 1.25rem var(--display); display: flex; justify-content: space-between; align-items: center; background: var(--row); }
+.banner.on { background: var(--yes); color: var(--on-fill); }
+.banner small { font: 700 0.875rem var(--body); }
+.board-body { padding: 14px 14px 16px; display: grid; gap: 10px; }
+ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.r { display: grid; grid-template-columns: auto 1fr auto; column-gap: 12px; align-items: center; background: var(--row); border-radius: 18px; padding: 11px 16px 11px 14px; border-left: 6px solid var(--none); }
+.r.none { background: transparent; border: 2px dashed var(--none); border-left-width: 6px; }
+.r .word { font: 600 1.0625rem var(--display); }
+.r.none .word { color: var(--muted); font-weight: 600; }
+.dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; }
+.name { font-weight: 700; }
+
+/* Notices */
+.notice { border-radius: 18px; background: var(--row); border-left: 6px solid var(--accent); padding: 12px 16px; display: grid; gap: 4px; }
+.notice b { font: 600 1.25rem var(--display); }
+.notice.error { border-left-color: var(--no); }
+.notice.warn { border-left-color: var(--maybe); }
+.notice .btn { margin-top: 6px; min-height: 44px; width: auto; justify-self: start; font-size: 0.9375rem; }
+.offline-bar { position: sticky; top: 52px; z-index: 2; margin: 0 -16px; background: var(--maybe); color: var(--on-fill); font: 700 0.9375rem var(--body); padding: 10px 16px; display: flex; gap: 8px; align-items: center; }
+.offline-bar b { font-family: var(--display); font-weight: 600; }
+.about { padding: 14px 16px; border-radius: 18px; border: 2px dashed var(--line); color: var(--muted); font-size: 0.9375rem; }
+.about b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="proto" aria-label="Prototype controls">
+  <label>Motion <select id="motion"><option value="subtle">Subtle fades</option><option value="none">None</option><option value="playful">Playful</option></select></label>
+  <label>Network <select id="net"><option value="ok">Normal</option><option value="slow">Slow (2 s)</option><option value="fail">Request fails</option><option value="offline">Offline</option></select></label>
+</div>
+<main id="app"></main>
+<script>
+const S = { motion: 'subtle', net: 'ok', answer: 'maybe', pending: null, error: false };
+const WORD = { yes: 'Yes', maybe: 'Maybe', no: 'No' };
+const MOTION = {
+  subtle: '<b>Subtle fades.</b> Colours and fills cross-fade in 150 ms when you tap or an answer changes. Nothing moves, so it looks the same with reduced motion on.',
+  none: '<b>None.</b> Every change is instant. The pending spinner is a still ring.',
+  playful: '<b>Playful.</b> Buttons squish when pressed, your answer pops, and a Game On banner drops in. All movement is switched off when the phone asks for reduced motion; then it behaves like Subtle.'
+};
+function render() {
+  document.body.className = 'motion-' + S.motion;
+  const yes = (S.answer === 'yes' ? 3 : 2);
+  const on = yes >= 3;
+  const ans = k => `<button class="ans ${k} ${S.pending === k ? 'pending' : ''}" data-a="${k}" aria-pressed="${S.answer === k}" ${S.pending ? 'aria-disabled="true"' : ''}>${WORD[k]}</button>`;
+  const status = S.pending ? `<span class="spin" aria-hidden="true"></span>Saving your answer…`
+    : S.error ? '' : `Your answer shows on all 2 of your Boards`;
+  document.getElementById('app').innerHTML = `
+  ${S.net === 'offline' ? `<div class="offline-bar" role="status"><b>Offline.</b> Answers won't save until you're back online.</div>` : ''}
+  <header><h1>States</h1><p class="muted">Tap an answer below. Change Motion and Network in the black strip to feel each option.</p></header>
+  <section><h2>Your Check-in, live</h2>
+    <div class="answers">${['yes', 'maybe', 'no'].map(ans).join('')}</div>
+    <p class="status-line" role="status">${status}</p>
+    ${S.error ? `<div class="notice error" role="alert"><b>Couldn't save your answer</b><span>${S.net === 'offline' ? 'You\'re offline.' : 'Something went wrong on the way.'} Your Boards still show your last saved answer.</span><button class="btn secondary" data-retry>Try again</button></div>` : ''}
+    <div class="board"><div class="banner ${on ? 'on' : ''}"><span>${on ? 'Game On' : 'Needs 1 more Yes'}</span><small>${yes} of 3 Yes so far</small></div>
+    <div class="board-body"><h3>Thursday Squad</h3><ul>
+      ${row('violet', 'You', S.answer)}${row('pink', 'Maya', 'yes')}${row('sky', 'Dev', 'yes')}${row('cyan', 'Sam', null)}
+    </ul></div></div>
+    <p class="about">${MOTION[S.motion]}</p>
+  </section>
+
+  <section><h2>Buttons</h2>
+    <div class="grid2">
+      <div class="cell"><span class="label">Normal</span><button class="btn primary">Save</button></div>
+      <div class="cell"><span class="label">Pressed</span><button class="btn primary is-pressed">Save</button></div>
+      <div class="cell"><span class="label">Disabled</span><button class="btn primary" disabled>Save</button></div>
+      <div class="cell"><span class="label">Pending</span><button class="btn primary" aria-busy="true"><span class="spin" aria-hidden="true"></span>Saving…</button></div>
+      <div class="cell"><span class="label">Secondary pressed</span><button class="btn secondary is-pressed">Make an Invite</button></div>
+      <div class="cell"><span class="label">Destructive pressed</span><button class="btn danger is-pressed">Remove Maya</button></div>
+    </div>
+    <p class="muted">Pressed darkens the fill; nothing moves. Disabled drops to a dim fill with text still readable (3:1). Pending keeps the button's place, shows a ring and a "…ing" word, and ignores further taps.</p>
+  </section>
+
+  <section><h2>Fields</h2>
+    <label class="field"><span>Note</span><input value="" placeholder="Answer first to add a Note" disabled><small>Disabled until you answer.</small></label>
+    <label class="field has-error"><span>Password</span><input type="password" value="short" aria-invalid="true" aria-describedby="e1"><span class="err" id="e1">Error: use at least 12 characters.</span></label>
+    <div class="notice error" role="alert"><b>Wrong username or password</b><span>Check both and try again.</span></div>
+    <p class="muted">A field error turns the border to the No colour and puts "Error:" and the fix right under the field. A form-wide error is a notice above the form. Both use words, never colour alone.</p>
+  </section>
+
+  <section><h2>Empty Board</h2>
+    <div class="board"><div class="banner"><span>Needs 3 more Yes</span><small>0 of 3 Yes so far</small></div>
+    <div class="board-body"><h3>Saturday Raid 🐉</h3><ul>${row('blue', 'Tariq', null)}${row('purple', 'Ines', null)}${row('violet', 'You', null)}</ul>
+    <p class="muted">Nobody has answered yet tonight.</p></div></div>
+    <p class="muted">The Board looks the same as always: every row reads "No answer yet". One line under it says nobody has answered.</p>
+  </section>
+
+  <section><h2>Offline</h2>
+    <div class="offline-bar" role="status" style="position:static;margin:0;border-radius:18px"><b>Offline.</b> Answers won't save until you're back online.</div>
+    <p class="muted">A Maybe-coloured bar under the top bar while the phone has no connection. It disappears by itself when the connection returns. A failed save shows the error notice with "Try again".</p>
+  </section>`;
+}
+function row(c, name, a) {
+  const C = { violet: '#ab8be3', pink: '#bf5da2', sky: '#58a1cf', cyan: '#3d9bac', blue: '#6899e2', purple: '#c77dd8' };
+  const col = a ? `var(--${a})` : '';
+  return `<li class="r ${a ? '' : 'none'}" style="${a ? `border-left-color:${col}` : ''}"><span class="dot" style="background:${C[c]}"></span><span class="name">${name}</span><span class="word" style="${a ? `color:${col}` : ''}">${a ? WORD[a] : 'No answer yet'}</span></li>`;
+}
+let timer;
+function answer(k) {
+  if (S.pending) return;
+  S.error = false;
+  if (S.net === 'offline') { S.error = true; render(); return; }
+  if (S.net === 'ok') { S.answer = k; render(); return; }
+  S.pending = k; render();
+  clearTimeout(timer);
+  timer = setTimeout(() => { if (S.net !== 'fail') S.answer = k; else S.error = true; S.pending = null; render(); }, S.net === 'fail' ? 1200 : 2000);
+}
+document.addEventListener('click', e => {
+  const a = e.target.closest('[data-a]'); if (a) answer(a.dataset.a);
+  if (e.target.closest('[data-retry]')) { S.error = false; render(); }
+});
+document.getElementById('motion').onchange = e => { S.motion = e.target.value; render(); };
+document.getElementById('net').onchange = e => { S.net = e.target.value; S.error = false; S.pending = null; render(); };
+render();
+</script>
+</body>
+</html>
