@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1220">
+<title>App icon and home screen</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap" rel="stylesheet">
+<style>
+/* PROTOTYPE, throwaway. Ticket "App icon and home-screen look". Four icon concepts in the
+   Soft palette on the Couch Co-op background, each shown as an iPhone tile, an Android
+   maskable circle, on a home screen, as a favicon and on the Android splash.
+   Layout idea: concept switch at the top, then each surface the icon appears on. */
+:root {
+  --bg: #1a1220; --surface: #261b2f; --row: #33253e; --line: #45344f;
+  --text: #f7eff8; --muted: #c3b2c8; --accent: #d8b4fe;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.5 var(--body); }
+.controls { position: sticky; top: 0; z-index: 2; background: var(--bg); border-bottom: 1px solid var(--line); padding: 12px 16px; max-width: 430px; margin: 0 auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.controls button { min-height: 44px; padding: 0 14px; border-radius: 999px; border: 2px solid var(--line); background: var(--surface); color: var(--text); font: 600 0.9375rem var(--display); cursor: pointer; }
+.controls button[aria-pressed="true"] { background: var(--text); color: var(--bg); border-color: var(--text); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+#view { max-width: 430px; margin: 0 auto; padding: 0 16px 48px; display: grid; gap: 26px; }
+h1 { font: 700 2rem/1.1 var(--display); margin: 18px 0 0; }
+h2 { font: 600 1.25rem var(--display); margin: 0; }
+.lead, .desc { color: var(--muted); margin: 4px 0 0; font-size: 0.9375rem; }
+section { display: grid; gap: 12px; }
+.pair { display: flex; gap: 24px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.pair figure { margin: 0; display: grid; justify-items: center; gap: 6px; font-size: 0.875rem; color: var(--muted); }
+.ios { width: 150px; height: 150px; border-radius: 34px; overflow: hidden; }
+.android { width: 150px; height: 150px; border-radius: 50%; overflow: hidden; position: relative; }
+.android .safe { position: absolute; inset: 10%; border-radius: 50%; border: 1.5px dashed #ffffff66; display: none; }
+.showsafe .android .safe { display: block; }
+.ios svg, .android svg, .tile svg, .fav svg, .splash svg { width: 100%; height: 100%; display: block; }
+.toggle { justify-self: center; min-height: 40px; padding: 0 14px; border-radius: 999px; border: 2px solid var(--line); background: transparent; color: var(--muted); font: 600 0.875rem var(--display); cursor: pointer; }
+.home { border-radius: 28px; padding: 22px 16px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 8px; background: linear-gradient(160deg, #3b5b8c, #6e3f6e 55%, #2b2340); }
+.home.light { background: linear-gradient(160deg, #cfe3f5, #f3d6e4 55%, #e9e4f5); }
+.app { display: grid; justify-items: center; gap: 4px; font: 500 0.75rem/1.2 system-ui, -apple-system, sans-serif; color: #fff; text-shadow: 0 1px 2px #0008; }
+.home.light .app { color: #111; text-shadow: none; }
+.tile { width: 58px; height: 58px; border-radius: 13px; overflow: hidden; }
+.tile.blank { background: #ffffff38; }
+.home.light .tile.blank { background: #00000020; }
+.favs { display: flex; gap: 18px; align-items: end; justify-content: center; }
+.fav { overflow: hidden; border-radius: 3px; }
+.tab { display: flex; align-items: center; gap: 8px; background: #2a2a2e; color: #eee; border-radius: 10px 10px 0 0; padding: 8px 12px; font: 0.8125rem system-ui, sans-serif; width: max-content; }
+.splash { width: 200px; height: 400px; margin: 0 auto; border-radius: 30px; border: 6px solid #000; background: var(--bg); display: grid; place-items: center; align-content: center; gap: 0; position: relative; }
+.splash .ic { width: 96px; height: 96px; border-radius: 50%; overflow: hidden; }
+.splash p { position: absolute; bottom: 40px; margin: 0; font: 500 0.9375rem system-ui, sans-serif; color: #f7eff8; }
+</style>
+</head>
+<body>
+<div class="controls" id="pick"></div>
+<div id="view"></div>
+<script>
+const C = { bg: '#1a1220', surface: '#261b2f', yes: '#8ceaa6', maybe: '#f9d280', no: '#fb9795', accent: '#d8b4fe',
+  violet: '#ab8be3', sky: '#58a1cf', pink: '#bf5da2' };
+// Each concept is drawn on a 512 grid; its art stays inside the maskable safe circle (radius 205).
+const ICONS = {
+  rows: { label: 'Board rows', desc: 'Three rounded rows in Yes, Maybe and No colours: a tiny Board. Reads as "who is in" at a glance.',
+    art: `<rect x="136" y="150" width="240" height="56" rx="28" fill="${C.yes}"/>
+          <rect x="136" y="228" width="196" height="56" rx="28" fill="${C.maybe}"/>
+          <rect x="136" y="306" width="152" height="56" rx="28" fill="${C.no}"/>` },
+  check: { label: 'Check', desc: 'One chunky rounded check mark in Yes green. The simplest mark: "checked in".',
+    art: `<path d="M150 262 L226 338 L362 178" fill="none" stroke="${C.yes}" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>` },
+  moon: { label: 'Moon', desc: 'A lavender crescent for "tonight" with a green dot like an online light.',
+    art: `<mask id="m"><rect width="512" height="512" fill="#fff"/><circle cx="310" cy="206" r="104" fill="#000"/></mask>
+          <circle cx="248" cy="262" r="126" fill="${C.accent}" mask="url(#m)"/>
+          <circle cx="342" cy="330" r="36" fill="${C.yes}" stroke="${C.bg}" stroke-width="14"/>` },
+  crew: { label: 'Crew', desc: 'Three avatar dots, the friends, with a green Yes badge. Says "your group, tonight".',
+    art: `<circle cx="178" cy="240" r="68" fill="${C.violet}" stroke="${C.bg}" stroke-width="14"/>
+          <circle cx="334" cy="240" r="68" fill="${C.pink}" stroke="${C.bg}" stroke-width="14"/>
+          <circle cx="256" cy="240" r="68" fill="${C.sky}" stroke="${C.bg}" stroke-width="14"/>
+          <circle cx="330" cy="336" r="50" fill="${C.yes}" stroke="${C.bg}" stroke-width="14"/>
+          <path d="M308 336 L324 352 L354 320" fill="none" stroke="${C.bg}" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>` }
+};
+const svg = k => `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="${ICONS[k].label} icon"><rect width="512" height="512" fill="${C.bg}"/>${ICONS[k].art}</svg>`;
+// Masks need unique ids per copy; rebuild the moon with a fresh id each time.
+function icon(k) {
+  if (k !== 'moon') return svg(k);
+  const id = 'm' + Math.random().toString(36).slice(2, 8);
+  return `<svg viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Moon icon"><rect width="512" height="512" fill="${C.bg}"/>
+    ${ICONS.moon.art.replace('id="m"', `id="${id}"`).replace('url(#m)', `url(#${id})`)}</svg>`;
+}
+const others = ['Photos', 'Maps', 'Music', 'Notes', 'Clock', 'Weather', 'Mail'];
+let state = { k: 'rows', safe: false };
+function render() {
+  const I = ICONS[state.k];
+  const home = light => `<div class="home ${light ? 'light' : ''}">${[...others.slice(0, 5), 'me', ...others.slice(5)].map(n => n === 'me'
+    ? `<div class="app"><div class="tile">${icon(state.k)}</div>Check-in</div>`
+    : `<div class="app"><div class="tile blank"></div>${n}</div>`).join('')}</div>`;
+  document.getElementById('view').className = state.safe ? 'showsafe' : '';
+  document.getElementById('view').innerHTML = `
+  <header><h1>${I.label}</h1><p class="lead">${I.desc}</p></header>
+  <section><h2>Icon</h2>
+    <div class="pair"><figure><div class="ios">${icon(state.k)}</div>iPhone</figure>
+    <figure><div class="android">${icon(state.k)}<span class="safe"></span></div>Android</figure></div>
+    <button class="toggle" id="safe">${state.safe ? 'Hide' : 'Show'} Android safe zone</button>
+  </section>
+  <section><h2>Home screen</h2><p class="desc">Labelled "Check-in" here; the short name is still open.</p>${home(false)}${home(true)}</section>
+  <section><h2>Browser tab</h2>
+    <div class="tab"><span class="fav" style="width:16px;height:16px">${icon(state.k)}</span>Tonight · Daily Check-in</div>
+    <div class="favs"><span class="fav" style="width:16px;height:16px">${icon(state.k)}</span><span class="fav" style="width:32px;height:32px">${icon(state.k)}</span><span class="fav" style="width:48px;height:48px;border-radius:8px">${icon(state.k)}</span></div>
+  </section>
+  <section><h2>Android splash</h2><p class="desc">Android builds this from the name, the background colour and the icon. iPhone shows no logo: it opens on the plain background colour, then the page.</p>
+    <div class="splash"><div class="ic">${icon(state.k)}</div><p>Daily Check-in</p></div>
+  </section>
+  <section><h2>Colours</h2><p class="desc">theme_color, background_color, the theme-color meta tag and the page background are all the Couch Co-op background, #1a1220, so the status bar, splash and first paint match.</p></section>`;
+  document.getElementById('safe').onclick = () => { state.safe = !state.safe; render(); };
+  document.querySelectorAll('#pick button').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === state.k));
+}
+for (const [k, I] of Object.entries(ICONS)) {
+  const b = document.createElement('button'); b.dataset.k = k; b.textContent = I.label;
+  b.onclick = () => { state.k = k; location.hash = k; render(); };
+  document.getElementById('pick').appendChild(b);
+}
+function fromHash() { const h = location.hash.slice(1); if (ICONS[h]) state.k = h; render(); }
+window.addEventListener('hashchange', fromHash); fromHash();
+</script>
+</body>
+</html>
