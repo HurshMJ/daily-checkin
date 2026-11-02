@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1220">
+<title>Tonight, direction C: Couch Co-op</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Nunito+Sans:opsz,wght@6..12,400;6..12,600;6..12,700&display=swap" rel="stylesheet">
+<style>
+/* PROTOTYPE, throwaway. Direction C "Couch Co-op": warm, playful and chunky.
+   Aubergine night, big rounded shapes, a rounded display face, roomy spacing.
+   Layout idea: big answer tiles, then Boards whose status is a full-width banner. */
+:root {
+  --bg: #1a1220;
+  --surface: #261b2f;
+  --surface-2: #33253e;
+  --line: #45344f;
+  --text: #f7eff8;
+  --muted: #c3b2c8;
+  --accent: #d8b4fe;
+  --yes: #5ee08f;
+  --maybe: #fcc54a;
+  --no: #ff7a7a;
+  --none: #7c6a85;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.5 var(--body); }
+main { max-width: 430px; margin: 0 auto; padding: 24px 16px 120px; display: grid; gap: 24px; }
+header { padding: 4px 4px 0; }
+h1 { font: 700 2.5rem/1 var(--display); margin: 0; }
+.date { color: var(--muted); font: 500 1rem var(--display); }
+.checkin { display: grid; gap: 14px; }
+.covers { margin: 0; color: var(--muted); }
+.answers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.answers button {
+  min-height: 76px; border-radius: 24px; border: 2px solid var(--line); background: var(--surface);
+  color: var(--text); font: 600 1.25rem var(--display); cursor: pointer; display: grid; place-items: center; gap: 2px;
+}
+.answers button::before { content: ""; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; }
+.answers button.yes::before { border-color: var(--yes); } .answers button.maybe::before { border-color: var(--maybe); } .answers button.no::before { border-color: var(--no); }
+.answers button[aria-pressed="true"] { color: #1a1220; }
+.answers button[aria-pressed="true"]::before { background: #1a1220; border-color: #1a1220; }
+.answers button[aria-pressed="true"].yes { background: var(--yes); border-color: var(--yes); }
+.answers button[aria-pressed="true"].maybe { background: var(--maybe); border-color: var(--maybe); }
+.answers button[aria-pressed="true"].no { background: var(--no); border-color: var(--no); }
+label.note { display: grid; gap: 6px; font: 600 0.9375rem var(--display); color: var(--muted); }
+input {
+  min-height: 52px; border-radius: 999px; border: 2px solid var(--line); background: var(--surface);
+  color: var(--text); font: 1.0625rem var(--body); padding: 0 20px;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.board { background: var(--surface); border-radius: 28px; overflow: hidden; }
+.banner { padding: 12px 20px; font: 700 1.375rem var(--display); display: flex; justify-content: space-between; align-items: center; }
+.banner.on { background: var(--yes); color: #10241a; }
+.banner.off { background: var(--no); color: #2a0d0d; }
+.banner.needs { background: var(--surface-2); color: var(--text); }
+.banner .count { font: 600 0.9375rem var(--body); font-variant-numeric: tabular-nums; }
+.board-body { padding: 16px 16px 18px; display: grid; gap: 12px; }
+h2 { font: 600 1.5rem/1.15 var(--display); margin: 0 4px; text-wrap: balance; }
+ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+li {
+  display: grid; grid-template-columns: auto 1fr auto; column-gap: 12px; align-items: center;
+  background: var(--surface-2); border-radius: 18px; padding: 12px 16px 12px 14px; border-left: 6px solid var(--none);
+}
+li.yes { border-left-color: var(--yes); } li.maybe { border-left-color: var(--maybe); } li.no { border-left-color: var(--no); }
+li.none { background: transparent; border: 2px dashed var(--none); border-left-width: 6px; }
+.dot { width: 16px; height: 16px; border-radius: 50%; }
+.name { font-weight: 700; }
+.word { font: 600 1.0625rem var(--display); }
+li.yes .word { color: var(--yes); } li.maybe .word { color: var(--maybe); } li.no .word { color: var(--no); }
+li.none .word { color: var(--muted); font-weight: 500; }
+.note-line { grid-column: 2 / 4; color: var(--muted); font-size: 0.9375rem; }
+.history { justify-self: start; margin-left: 4px; color: var(--accent); font: 600 1rem var(--display); }
+.about { color: var(--muted); font-size: 0.9375rem; padding: 0 4px; }
+.about h3 { color: var(--text); font: 600 1.0625rem var(--display); margin: 0 0 4px; }
+.proto-bar {
+  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 4px;
+  background: #000c; border: 1px solid #fff3; border-radius: 999px; padding: 4px; font: 600 0.8125rem system-ui, sans-serif;
+}
+.proto-bar a, .proto-bar span { padding: 8px 12px; border-radius: 999px; color: #fff; text-decoration: none; min-height: 36px; display: flex; align-items: center; }
+.proto-bar span { background: #fff; color: #000; }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+  <section class="about">
+    <h3>Direction C: Couch Co-op</h3>
+    Warm, playful and chunky. Aubergine background with plum surfaces, very round corners and a lavender
+    accent. A rounded display face for headings and answers, a friendly sans for text. Roomy: big answer
+    tiles, thick stripes and generous spacing. Each Board's state is a full-width banner across its top,
+    solid green at Game On, so the outcome reads before the names.
+  </section>
+</main>
+<nav class="proto-bar" aria-label="Prototype directions"><a href="https://claude.ai/artifact/BEVp7puZpbyiRebzw2gTzE">A</a><a href="https://claude.ai/artifact/AjGjsTkWPMiAzjupZsUiQ3">B</a><span>C Couch Co-op</span></nav>
+<script>
+// PROTOTYPE, throwaway. Shared mock data and Game On logic for the three
+// Tonight-screen visual directions. State lives in memory only.
+const AVATAR = {
+  blue: '#6b9bf2', sky: '#5cc0ee', cyan: '#3fcfd2', indigo: '#8a8ff5',
+  violet: '#a78bfa', purple: '#cf8ae8', pink: '#f08cc2', slate: '#9aa7ba'
+};
+const WORD = { yes: 'Yes', maybe: 'Maybe', no: 'No' };
+const ORDER = { yes: 0, maybe: 1, no: 2, null: 3 };
+
+const state = {
+  me: { name: 'You', color: 'violet', a: 'yes', note: 'on after 9:30' },
+  groups: [
+    { name: 'Thursday Squad', threshold: 3, wasOn: true, members: [
+      { name: 'Maya', color: 'pink', a: 'yes', note: 'bringing the new map pack' },
+      { name: 'Dev', color: 'sky', a: 'yes', note: '' },
+      { name: 'Sam', color: 'cyan', a: 'maybe', note: 'depends when work ends' },
+      { name: 'Rin', color: 'indigo', a: 'no', note: 'family dinner' },
+      { name: 'Leo', color: 'slate', a: null, note: '' }
+    ]},
+    { name: 'Saturday Raid 🐉', threshold: 4, wasOn: false, members: [
+      { name: 'Tariq', color: 'blue', a: 'yes', note: 'on after 10' },
+      { name: 'Ines', color: 'purple', a: 'yes', note: '' },
+      { name: 'Jo', color: 'sky', a: 'maybe', note: '' },
+      { name: 'Kai', color: 'pink', a: null, note: '' },
+      { name: 'Noor', color: 'cyan', a: null, note: '' }
+    ]}
+  ]
+};
+
+// Derive what each Board shows, following the product spec's pill rule:
+// Game On if count >= threshold; else Game Off if it was on; else Needs N more Yes.
+function boards() {
+  return state.groups.map(g => {
+    const rows = [{ ...state.me, you: true }, ...g.members]
+      .map((r, i) => ({ ...r, i }))
+      .sort((x, y) => ORDER[x.a] - ORDER[y.a] || x.i - y.i);
+    const yes = rows.filter(r => r.a === 'yes').length;
+    if (yes >= g.threshold) g.wasOn = true;
+    const pill = yes >= g.threshold ? 'on' : g.wasOn ? 'off' : 'needs';
+    const need = g.threshold - yes;
+    const pillText = pill === 'on' ? 'Game On' : pill === 'off' ? 'Game Off' : `Needs ${need} more Yes`;
+    return { name: g.name, threshold: g.threshold, yes, total: rows.length, pill, pillText, rows,
+      countText: `${yes} of ${g.threshold} Yes so far` };
+  });
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// Each page defines render(); this wires the shared controls to it.
+function mount() {
+  const root = document.getElementById('app');
+  function draw() {
+    const focusId = document.activeElement && document.activeElement.id;
+    const caret = focusId === 'note' ? document.activeElement.selectionStart : null;
+    root.innerHTML = render(state.me, boards(), state.groups.length);
+    if (focusId) {
+      const el = document.getElementById(focusId);
+      if (el) { el.focus(); if (caret !== null) el.setSelectionRange(caret, caret); }
+    }
+  }
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-answer]');
+    if (b) { state.me.a = b.dataset.answer; draw(); }
+  });
+  root.addEventListener('input', e => {
+    if (e.target.id === 'note') { state.me.note = e.target.value.slice(0, 140); draw(); }
+  });
+  draw();
+}
+
+function render(me, bs, n) {
+  const btn = a => `<button id="ans-${a}" class="${a}" data-answer="${a}" aria-pressed="${me.a === a}">${WORD[a]}</button>`;
+  const row = r => `<li class="${r.a || 'none'}">
+      <span class="dot" style="background:${AVATAR[r.color]}" aria-hidden="true"></span>
+      <span class="name">${r.you ? 'You' : esc(r.name)}</span>
+      <span class="word">${r.a ? WORD[r.a] : 'No answer yet'}</span>
+      ${r.note ? `<span class="note-line">${esc(r.note)}</span>` : ''}
+    </li>`;
+  return `<header><h1>Tonight</h1><span class="date">Monday 2 November</span></header>
+  <section class="checkin" aria-label="Your Check-in">
+    <p class="covers">Your answer shows on all ${n} of your Boards</p>
+    <div class="answers">${['yes', 'maybe', 'no'].map(btn).join('')}</div>
+    <label class="note">Note<input id="note" maxlength="140" placeholder="e.g. on after 10" value="${esc(me.note)}" ${me.a ? '' : 'disabled'}></label>
+  </section>
+  ${bs.map(b => `<section class="board">
+    <div class="banner ${b.pill}"><span>${b.pillText}</span><span class="count">${b.countText}</span></div>
+    <div class="board-body">
+      <h2>${esc(b.name)}</h2>
+      <ul>${b.rows.map(row).join('')}</ul>
+      <a class="history" href="#history">History</a>
+    </div>
+  </section>`).join('')}`;
+}
+mount();
+</script>
+</body>
+</html>

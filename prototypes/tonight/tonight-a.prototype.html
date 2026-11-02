@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0e1320">
+<title>Tonight, direction A: Quiet Lobby</title>
+<style>
+/* PROTOTYPE, throwaway. Direction A "Quiet Lobby": calm, roomy cards on a
+   blue-slate night, system font, medium density. Layout idea: one column,
+   Check-in card, then one raised card per Board. */
+:root {
+  --bg: #0e1320;
+  --surface: #161d2c;
+  --surface-2: #1e2738;
+  --line: #2b3549;
+  --text: #e8ecf4;
+  --muted: #a3adc2;
+  --accent: #a9b8ff;
+  --yes: #4ade80;
+  --maybe: #fbbf24;
+  --no: #f87171;
+  --none: #6b768c;
+  --on-color: #08130c;
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 1rem/1.45 var(--font); }
+main { max-width: 430px; margin: 0 auto; padding: 20px 16px 120px; display: grid; gap: 16px; }
+header { display: flex; align-items: baseline; justify-content: space-between; padding: 8px 4px 0; }
+h1 { font-size: 1.75rem; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+.date { color: var(--muted); font-size: 0.9375rem; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 16px; }
+.covers { margin: 0 0 12px; color: var(--muted); font-size: 0.9375rem; }
+.answers { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.answers button {
+  min-height: 52px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--surface-2);
+  color: var(--text); font: 600 1rem var(--font); cursor: pointer;
+}
+.answers button[aria-pressed="true"].yes { background: var(--yes); border-color: var(--yes); color: var(--on-color); }
+.answers button[aria-pressed="true"].maybe { background: var(--maybe); border-color: var(--maybe); color: #1a1202; }
+.answers button[aria-pressed="true"].no { background: var(--no); border-color: var(--no); color: #1c0606; }
+label.note { display: grid; gap: 6px; margin-top: 14px; font-size: 0.875rem; color: var(--muted); }
+input {
+  min-height: 48px; border-radius: 12px; border: 1.5px solid var(--line); background: var(--bg);
+  color: var(--text); font: 1rem var(--font); padding: 0 14px;
+}
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.board-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+h2 { font-size: 1.1875rem; margin: 0; text-wrap: balance; }
+.count { margin: 2px 0 0; color: var(--muted); font-size: 0.875rem; font-variant-numeric: tabular-nums; }
+.pill { flex: none; border-radius: 999px; padding: 5px 12px; font-size: 0.8125rem; font-weight: 700; white-space: nowrap; }
+.pill.on { background: var(--yes); color: var(--on-color); }
+.pill.off { border: 1.5px solid var(--no); color: var(--no); }
+.pill.needs { border: 1.5px solid var(--line); color: var(--text); background: var(--surface-2); }
+ul { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 8px; }
+li {
+  display: grid; grid-template-columns: auto 1fr auto; column-gap: 10px; align-items: center;
+  background: var(--surface-2); border-radius: 10px; padding: 10px 12px 10px 14px; border-left: 4px solid var(--none);
+}
+li.yes { border-left-color: var(--yes); }
+li.maybe { border-left-color: var(--maybe); }
+li.no { border-left-color: var(--no); }
+li.none { border-left: 4px dashed var(--none); background: transparent; outline: 1px dashed var(--line); outline-offset: -1px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; }
+.name { font-weight: 600; }
+.word { font-weight: 600; font-size: 0.9375rem; }
+li.yes .word { color: var(--yes); } li.maybe .word { color: var(--maybe); } li.no .word { color: var(--no); }
+li.none .word { color: var(--muted); font-weight: 400; }
+.note-line { grid-column: 2 / 4; color: var(--muted); font-size: 0.875rem; margin-top: 2px; }
+.history { display: inline-block; margin-top: 12px; color: var(--accent); font-size: 0.9375rem; }
+.about { color: var(--muted); font-size: 0.875rem; padding: 0 4px; }
+.about h3 { color: var(--text); font-size: 0.9375rem; margin: 0 0 4px; }
+.proto-bar {
+  position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; gap: 4px;
+  background: #000c; border: 1px solid #fff3; border-radius: 999px; padding: 4px; font: 600 0.8125rem system-ui, sans-serif;
+}
+.proto-bar a, .proto-bar span { padding: 8px 12px; border-radius: 999px; color: #fff; text-decoration: none; min-height: 36px; display: flex; align-items: center; }
+.proto-bar span { background: #fff; color: #000; }
+</style>
+</head>
+<body>
+<main>
+  <div id="app"></div>
+  <section class="about">
+    <h3>Direction A: Quiet Lobby</h3>
+    Calm and roomy. Blue-slate night background with slightly lighter raised cards, soft 16 px corners and a
+    periwinkle accent for links and focus. The phone's own system font, so nothing to download. Medium density:
+    each Member row is its own tile with a 4 px coloured stripe. Game On is a solid green pill.
+  </section>
+</main>
+<nav class="proto-bar" aria-label="Prototype directions"><span>A Quiet Lobby</span><a href="https://claude.ai/artifact/AjGjsTkWPMiAzjupZsUiQ3">B</a><a href="https://claude.ai/artifact/3UXx5K4TLj7sdFkMTsXtti">C</a></nav>
+<script>
+// PROTOTYPE, throwaway. Shared mock data and Game On logic for the three
+// Tonight-screen visual directions. State lives in memory only.
+const AVATAR = {
+  blue: '#6b9bf2', sky: '#5cc0ee', cyan: '#3fcfd2', indigo: '#8a8ff5',
+  violet: '#a78bfa', purple: '#cf8ae8', pink: '#f08cc2', slate: '#9aa7ba'
+};
+const WORD = { yes: 'Yes', maybe: 'Maybe', no: 'No' };
+const ORDER = { yes: 0, maybe: 1, no: 2, null: 3 };
+
+const state = {
+  me: { name: 'You', color: 'violet', a: 'yes', note: 'on after 9:30' },
+  groups: [
+    { name: 'Thursday Squad', threshold: 3, wasOn: true, members: [
+      { name: 'Maya', color: 'pink', a: 'yes', note: 'bringing the new map pack' },
+      { name: 'Dev', color: 'sky', a: 'yes', note: '' },
+      { name: 'Sam', color: 'cyan', a: 'maybe', note: 'depends when work ends' },
+      { name: 'Rin', color: 'indigo', a: 'no', note: 'family dinner' },
+      { name: 'Leo', color: 'slate', a: null, note: '' }
+    ]},
+    { name: 'Saturday Raid 🐉', threshold: 4, wasOn: false, members: [
+      { name: 'Tariq', color: 'blue', a: 'yes', note: 'on after 10' },
+      { name: 'Ines', color: 'purple', a: 'yes', note: '' },
+      { name: 'Jo', color: 'sky', a: 'maybe', note: '' },
+      { name: 'Kai', color: 'pink', a: null, note: '' },
+      { name: 'Noor', color: 'cyan', a: null, note: '' }
+    ]}
+  ]
+};
+
+// Derive what each Board shows, following the product spec's pill rule:
+// Game On if count >= threshold; else Game Off if it was on; else Needs N more Yes.
+function boards() {
+  return state.groups.map(g => {
+    const rows = [{ ...state.me, you: true }, ...g.members]
+      .map((r, i) => ({ ...r, i }))
+      .sort((x, y) => ORDER[x.a] - ORDER[y.a] || x.i - y.i);
+    const yes = rows.filter(r => r.a === 'yes').length;
+    if (yes >= g.threshold) g.wasOn = true;
+    const pill = yes >= g.threshold ? 'on' : g.wasOn ? 'off' : 'needs';
+    const need = g.threshold - yes;
+    const pillText = pill === 'on' ? 'Game On' : pill === 'off' ? 'Game Off' : `Needs ${need} more Yes`;
+    return { name: g.name, threshold: g.threshold, yes, total: rows.length, pill, pillText, rows,
+      countText: `${yes} of ${g.threshold} Yes so far` };
+  });
+}
+
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+}
+
+// Each page defines render(); this wires the shared controls to it.
+function mount() {
+  const root = document.getElementById('app');
+  function draw() {
+    const focusId = document.activeElement && document.activeElement.id;
+    const caret = focusId === 'note' ? document.activeElement.selectionStart : null;
+    root.innerHTML = render(state.me, boards(), state.groups.length);
+    if (focusId) {
+      const el = document.getElementById(focusId);
+      if (el) { el.focus(); if (caret !== null) el.setSelectionRange(caret, caret); }
+    }
+  }
+  root.addEventListener('click', e => {
+    const b = e.target.closest('[data-answer]');
+    if (b) { state.me.a = b.dataset.answer; draw(); }
+  });
+  root.addEventListener('input', e => {
+    if (e.target.id === 'note') { state.me.note = e.target.value.slice(0, 140); draw(); }
+  });
+  draw();
+}
+
+function render(me, bs, n) {
+  const btn = a => `<button id="ans-${a}" class="${a}" data-answer="${a}" aria-pressed="${me.a === a}">${WORD[a]}</button>`;
+  const row = r => `<li class="${r.a || 'none'}">
+      <span class="dot" style="background:${AVATAR[r.color]}" aria-hidden="true"></span>
+      <span class="name">${r.you ? 'You' : esc(r.name)}</span>
+      <span class="word">${r.a ? WORD[r.a] : 'No answer yet'}</span>
+      ${r.note ? `<span class="note-line">${esc(r.note)}</span>` : ''}
+    </li>`;
+  return `<header><h1>Tonight</h1><span class="date">Mon 2 Nov</span></header>
+  <section class="card" aria-label="Your Check-in">
+    <p class="covers">Your answer shows on all ${n} of your Boards</p>
+    <div class="answers">${['yes', 'maybe', 'no'].map(btn).join('')}</div>
+    <label class="note">Note<input id="note" maxlength="140" placeholder="e.g. on after 10" value="${esc(me.note)}" ${me.a ? '' : 'disabled'}></label>
+  </section>
+  ${bs.map(b => `<section class="card">
+    <div class="board-head"><div><h2>${esc(b.name)}</h2><p class="count">${b.countText}</p></div>
+    <span class="pill ${b.pill}">${b.pillText}</span></div>
+    <ul>${b.rows.map(row).join('')}</ul>
+    <a class="history" href="#history">History</a>
+  </section>`).join('')}`;
+}
+mount();
+</script>
+</body>
+</html>
