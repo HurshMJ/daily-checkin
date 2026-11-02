@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1220">
+<title>Daily Check-in screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Nunito+Sans:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* PROTOTYPE, throwaway. Ticket "Components and screen layouts". Couch Co-op direction,
+   Soft palette, the chosen type scale. Layout idea: a control strip picks the screen,
+   the navigation style and the confirmation style; the screen renders below at phone width. */
+:root {
+  --bg: #1a1220; --surface: #261b2f; --row: #33253e; --line: #45344f;
+  --text: #f7eff8; --muted: #c3b2c8; --accent: #d8b4fe; --on-fill: #1a1220;
+  --yes: #8ceaa6; --maybe: #f9d280; --no: #fb9795; --none: #9a87a4;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", system-ui, sans-serif;
+  --t-title: 2.5rem; --t-head: 1.5rem; --t-banner: 1.25rem; --t-body: 1.0625rem; --t-small: 0.9375rem;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: var(--t-body)/1.5 var(--body); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.proto { background: #000; color: #fff; font: 0.8125rem/1.3 system-ui, sans-serif; padding: 8px 12px; display: grid; gap: 6px; }
+.proto label { display: flex; gap: 6px; align-items: center; }
+.proto select { font: inherit; padding: 6px; border-radius: 8px; background: #222; color: #fff; border: 1px solid #555; min-height: 36px; flex: 1; }
+.proto .row { display: flex; gap: 10px; flex-wrap: wrap; }
+.phone { max-width: 430px; margin: 0 auto; min-height: calc(100vh - 110px); position: relative; padding-bottom: 96px; }
+main { padding: 8px 16px 24px; display: grid; gap: 22px; }
+/* App bar */
+.appbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 0; min-height: 56px; }
+.back { color: var(--accent); font: 700 var(--t-body) var(--body); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; min-height: 44px; }
+.me { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px 0 10px; border-radius: 999px; background: var(--surface); border: 2px solid var(--line); color: var(--text); font: 700 var(--t-small) var(--body); text-decoration: none; }
+.tabs { position: fixed; left: 50%; transform: translateX(-50%); bottom: 0; width: min(430px, 100%); display: grid; grid-template-columns: repeat(3, 1fr); background: var(--surface); border-top: 2px solid var(--line); padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); }
+.tabs a { min-height: 52px; display: grid; place-items: center; align-content: center; gap: 2px; color: var(--muted); text-decoration: none; font: 700 0.875rem var(--body); border-radius: 16px; }
+.tabs a[aria-current="page"] { color: var(--text); background: var(--row); }
+.tabs i { width: 20px; height: 6px; border-radius: 3px; background: currentColor; display: block; }
+/* Type */
+h1 { font: 600 var(--t-title)/1.15 var(--display); margin: 0; text-wrap: balance; }
+h2 { font: 600 var(--t-head)/1.15 var(--display); margin: 0; text-wrap: balance; }
+h3 { font: 600 var(--t-banner)/1.15 var(--display); margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted); font-size: var(--t-small); }
+/* Surfaces */
+.card { background: var(--surface); border-radius: 28px; padding: 20px 16px; display: grid; gap: 16px; }
+.stack { display: grid; gap: 12px; }
+/* Buttons */
+.btn { min-height: 52px; padding: 0 22px; border-radius: 999px; border: 2px solid transparent; font: 700 var(--t-body) var(--body); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; gap: 8px; text-decoration: none; width: 100%; }
+.btn.primary { background: var(--accent); color: var(--on-fill); }
+.btn.secondary { background: transparent; border-color: var(--line); color: var(--text); }
+.btn.danger { background: transparent; border-color: var(--no); color: var(--no); }
+.btn.danger.armed { background: var(--no); color: var(--on-fill); }
+.btn.small { min-height: 44px; width: auto; padding: 0 16px; font-size: var(--t-small); }
+.link { color: var(--accent); font-weight: 700; text-decoration: underline; text-underline-offset: 3px; }
+/* Fields */
+.field { display: grid; gap: 6px; }
+.field > span { font-weight: 700; }
+.field small { color: var(--muted); font-size: var(--t-small); }
+input[type=text], input[type=password], input[type=number] { min-height: 52px; border-radius: 999px; border: 2px solid var(--line); background: var(--bg); color: var(--text); font: var(--t-body) var(--body); padding: 0 20px; width: 100%; }
+.card input[type=text], .card input[type=password], .card input[type=number] { background: var(--bg); }
+.stepper { display: grid; grid-template-columns: 52px 1fr 52px; gap: 8px; align-items: center; }
+.stepper button { min-height: 52px; border-radius: 50%; border: 2px solid var(--line); background: var(--row); color: var(--text); font: 600 1.5rem var(--display); cursor: pointer; }
+.stepper output { text-align: center; font: 600 var(--t-head) var(--display); }
+/* Avatar picker */
+.picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; border: 0; padding: 0; margin: 0; }
+.picker legend { font-weight: 700; margin-bottom: 6px; padding: 0; }
+.picker label { display: grid; justify-items: center; gap: 4px; padding: 10px 2px; border-radius: 18px; border: 2px solid var(--line); font-size: var(--t-small); cursor: pointer; min-height: 72px; position: relative; }
+.picker input { position: absolute; opacity: 0; }
+.picker label:has(input:checked) { border-color: var(--accent); background: var(--row); font-weight: 700; }
+.picker label:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; flex: none; }
+.picker .dot { width: 24px; height: 24px; }
+/* Lists */
+ul.list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+ul.list li { background: var(--row); border-radius: 18px; padding: 10px 12px 10px 16px; display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; align-items: center; min-height: 56px; }
+ul.list li .sub { grid-column: 2 / 4; color: var(--muted); font-size: var(--t-small); }
+.name { font-weight: 700; }
+.tag { font: 600 0.875rem var(--display); color: var(--accent); border: 2px solid var(--accent); border-radius: 999px; padding: 0 10px; }
+/* Toggle */
+.toggle { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--line); min-height: 56px; }
+.toggle:last-child { border-bottom: 0; }
+.toggle small { grid-column: 1; color: var(--muted); font-size: var(--t-small); }
+.switch { grid-row: 1 / 3; grid-column: 2; min-height: 44px; min-width: 84px; border-radius: 999px; border: 2px solid var(--line); background: var(--bg); color: var(--muted); font: 700 var(--t-small) var(--body); cursor: pointer; display: inline-flex; align-items: center; gap: 8px; padding: 0 12px 0 6px; }
+.switch::before { content: ""; width: 28px; height: 28px; border-radius: 50%; background: var(--none); }
+.switch[aria-checked="true"] { background: var(--accent); color: var(--on-fill); border-color: var(--accent); flex-direction: row-reverse; padding: 0 6px 0 12px; }
+.switch[aria-checked="true"]::before { background: var(--on-fill); }
+/* Notices */
+.notice { border-radius: 18px; background: var(--row); border-left: 6px solid var(--accent); padding: 12px 16px; display: grid; gap: 2px; }
+.notice b { font-family: var(--display); font-weight: 600; font-size: var(--t-banner); }
+.notice.warn { border-left-color: var(--maybe); }
+.copy { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; background: var(--bg); border: 2px dashed var(--line); border-radius: 18px; padding: 8px 8px 8px 14px; font-size: var(--t-small); word-break: break-all; }
+/* Sheet */
+.scrim { position: fixed; inset: 0; background: #0009; display: grid; align-items: end; z-index: 5; }
+.sheet { max-width: 430px; width: 100%; margin: 0 auto; background: var(--surface); border-radius: 28px 28px 0 0; padding: 22px 16px calc(22px + env(safe-area-inset-bottom)); display: grid; gap: 12px; }
+.empty { text-align: center; display: grid; gap: 14px; justify-items: center; padding: 32px 8px; }
+.ring { width: 96px; height: 96px; border-radius: 50%; border: 4px dashed var(--none); }
+.danger-zone { display: grid; gap: 10px; padding-top: 6px; }
+.section-title { font: 600 var(--t-banner) var(--display); margin: 0 4px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.about { margin: 0 16px; padding: 14px 16px; border-radius: 18px; border: 2px dashed var(--line); color: var(--muted); font-size: var(--t-small); }
+.about b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="proto" aria-label="Prototype controls">
+  <label>Screen <select id="screen"></select></label>
+  <div class="row">
+    <label>Navigation <select id="nav"><option value="bar">Top bar + You button</option><option value="tabs">Bottom tabs</option></select></label>
+    <label>Confirm <select id="confirm"><option value="inline">Tap again</option><option value="sheet">Bottom sheet</option></select></label>
+  </div>
+</div>
+<div class="phone" id="phone"></div>
+<script>
+const AV = { blue: '#6899e2', sky: '#58a1cf', cyan: '#3d9bac', indigo: '#8489da', violet: '#ab8be3', purple: '#c77dd8', pink: '#bf5da2', slate: '#8e99ab' };
+const cap = s => s[0].toUpperCase() + s.slice(1);
+const dot = c => `<span class="dot" style="background:${AV[c]}" aria-hidden="true"></span>`;
+const S = { screen: 'components', nav: 'bar', confirm: 'inline', colour: 'violet', toggles: { yes: true, on: true, off: true, rem: true, sum: false }, sheet: null };
+let armTimer;
+
+const picker = (legend) => `<fieldset class="picker"><legend>${legend}</legend>${Object.keys(AV).map(c =>
+  `<label>${dot(c)}<input type="radio" name="colour" value="${c}" ${S.colour === c ? 'checked' : ''}>${cap(c)}</label>`).join('')}</fieldset>`;
+const field = (label, type, value = '', hint = '', id = label.toLowerCase().replace(/\W+/g, '-')) =>
+  `<label class="field" for="${id}"><span>${label}</span><input id="${id}" type="${type}" value="${value}">${hint ? `<small>${hint}</small>` : ''}</label>`;
+const WHY = { c1: 'Maya drops off the Board. Their past nights stay in History.', m1: 'Maya drops off the Board. Their past nights stay in History.', p1: 'Its Board leaves your Tonight screen. Nobody is notified.', p2: 'Every device, this one included, has to log in again.', p3: 'Your login and every past Check-in are erased. This cannot be undone.', g1: 'Its Board and History are deleted for everyone. Nobody is notified.' };
+const danger = (label, confirmText, id) => `<button class="btn danger" data-danger="${id}" data-label="${label}" data-confirm="${confirmText}">${label}</button>`;
+const sw = (k, label, hint) => `<div class="toggle"><span>${label}</span><small>${hint}</small>
+  <button class="switch" role="switch" aria-checked="${S.toggles[k]}" data-toggle="${k}">${S.toggles[k] ? 'On' : 'Off'}</button></div>`;
+
+const SCREENS = {
+  components: { label: 'Components', top: null, html: () => `
+    <h1>Components</h1>
+    <div class="stack"><p class="section-title">Buttons</p>
+      <button class="btn primary">Create a Group</button>
+      <button class="btn secondary">Make an Invite</button>
+      ${danger('Remove from Group', 'Tap again to remove Maya', 'c1')}
+      <div class="grid2"><button class="btn small secondary">Cancel</button><button class="btn small primary">Save</button></div>
+    </div>
+    <div class="stack"><p class="section-title">Fields</p>
+      ${field('Username', 'text', 'nightowl', '3 to 32 characters. Spaces and most symbols are fine.')}
+      ${field('Password', 'password', 'correct horse battery', '12 to 128 characters.')}
+    </div>
+    ${picker('Avatar colour')}
+    <div class="stack"><p class="section-title">Notice</p>
+      <div class="notice warn" role="status"><b>Your password was reset</b><span>Someone used a Password Reset Link for your login. If it wasn't you, tell your Group's Owner.</span></div>
+      <div class="notice" role="status"><b>Invite made</b><span>Send this link to one friend. It works once.</span></div>
+    </div>
+    <div class="stack"><p class="section-title">List</p>
+      <ul class="list"><li>${dot('pink')}<span class="name">Maya</span><span class="tag">Owner</span><span class="sub">@maya.k</span></li>
+      <li>${dot('sky')}<span class="name">Dev</span><span></span><span class="sub">@devlin</span></li></ul></div>
+    <div class="card"><p class="section-title" style="margin:0">Toggles</p>${sw('yes', 'Someone said Yes', 'When a friend answers Yes')}${sw('sum', 'Daily Summary', 'At 8 PM, everyone\'s answer')}</div>` },
+
+  login: { label: 'Login', top: null, plain: true, html: () => `
+    <div style="display:grid;gap:6px;padding-top:24px"><h1>Daily Check-in</h1><p class="muted">Who's on tonight?</p></div>
+    <form class="stack" onsubmit="event.preventDefault()">
+      ${field('Username', 'text', '')}
+      ${field('Password', 'password', '')}
+      <button class="btn primary">Log in</button>
+    </form>
+    <p class="muted">No login yet? Ask a friend in your Group for an Invite.</p>` },
+
+  setup: { label: 'Setup Link: create login', top: null, plain: true, html: () => `
+    <div style="display:grid;gap:6px;padding-top:24px"><h1>Create your login</h1><p class="muted">This link works once and expires an hour after it was made.</p></div>
+    <form class="stack" onsubmit="event.preventDefault()">
+      ${field('Username', 'text', '', '3 to 32 characters. Friends see this until you set a Display Name.')}
+      ${field('Password', 'password', '', '12 to 128 characters. A passphrase works well.')}
+      ${picker('Avatar colour')}
+      <button class="btn primary">Create login</button>
+    </form>` },
+
+  empty: { label: 'Tonight, no Group yet', top: 'tonight', html: () => `
+    <h1>Tonight</h1>
+    <div class="card empty"><span class="ring" aria-hidden="true"></span><h2>You're not in a Group yet</h2>
+      <p class="muted">Create one and invite your friends, or open an Invite link a friend sent you.</p>
+      <a class="btn primary" href="#create">Create a Group</a></div>` },
+
+  create: { label: 'Create a Group', top: 'back', html: () => `
+    <h1>New Group</h1>
+    <form class="stack" onsubmit="event.preventDefault()">
+      ${field('Group name', 'text', '', '1 to 40 characters. Emoji are fine.')}
+      <p class="muted">You'll be its Owner. It's Game On when 3 people say Yes; you can change that later.</p>
+      <button class="btn primary">Create Group</button>
+    </form>` },
+
+  profile: { label: 'Profile', top: 'back', tab: 'profile', html: () => `
+    <div style="display:flex;gap:14px;align-items:center"><span class="dot" style="background:${AV[S.colour]};width:48px;height:48px" aria-hidden="true"></span><div><h1 style="font-size:var(--t-head)">Night Owl 🦉</h1><p class="muted">@nightowl</p></div></div>
+    <div class="card"><h3>Name and colour</h3>
+      ${field('Username', 'text', 'nightowl', 'You log in with this, in any capitals.')}
+      ${field('Display Name', 'text', 'Night Owl 🦉', 'Optional. Friends see this instead of your username. Leave it empty to show your username.')}
+      ${picker('Avatar colour')}
+      <button class="btn primary">Save</button></div>
+    <div class="card"><h3>Notifications</h3>
+      <button class="btn secondary">Turn on notifications on this phone</button>
+      <p class="muted">On iPhone, add Daily Check-in to your Home Screen first: Share, then Add to Home Screen.</p>
+      <div>${sw('yes', 'Someone said Yes', 'When a friend answers Yes')}${sw('on', 'Game On', 'When your Group reaches its threshold')}${sw('off', 'Game Off', 'When a Game On falls apart, if you said Yes')}${sw('rem', 'Reminder', 'At 5 PM if you haven\'t answered')}${sw('sum', 'Daily Summary', 'At 8 PM, everyone\'s answer')}</div></div>
+    <div class="card"><h3>Password</h3>
+      ${field('Current password', 'password', '')}${field('New password', 'password', '', '12 to 128 characters. Your other devices will be logged out.')}
+      <button class="btn secondary">Change password</button></div>
+    <div class="card"><h3>Groups</h3>
+      <ul class="list"><li>${dot('pink')}<span class="name">Thursday Squad</span><span class="tag">Owner</span></li><li>${dot('sky')}<span class="name">Saturday Raid 🐉</span><span></span></li></ul>
+      ${danger('Leave Saturday Raid 🐉', 'Tap again to leave', 'p1')}
+      <p class="muted">To leave Thursday Squad, hand ownership to someone else first in its settings.</p></div>
+    <div class="card"><h3>Sessions</h3>
+      <button class="btn secondary">Log out</button>
+      ${danger('Log out everywhere', 'Tap again to log out every device', 'p2')}</div>
+    <div class="card"><h3>Delete login</h3>
+      <p class="muted">Erases your login and every past Check-in. Groups you own pass to another Member first.</p>
+      ${field('Password', 'password', '', 'Needed to delete.', 'del-pw')}
+      ${danger('Delete my login', 'Tap again to delete for good', 'p3')}</div>` },
+
+  group: { label: 'Group settings (Owner)', top: 'back', tab: 'groups', html: () => `
+    <div><h1 style="font-size:var(--t-head)">Thursday Squad</h1><p class="muted">You're the Owner · 5 Members</p></div>
+    <div class="card"><h3>Basics</h3>
+      ${field('Group name', 'text', 'Thursday Squad', '1 to 40 characters.')}
+      <div class="field"><span>Game On at</span><div class="stepper"><button aria-label="One fewer">−</button><output>3 Yes</output><button aria-label="One more">+</button></div><small>Any whole number from 1.</small></div>
+      <button class="btn primary">Save</button></div>
+    <div class="card"><h3>Members</h3>
+      <ul class="list">
+        <li>${dot('violet')}<span class="name">You</span><span class="tag">Owner</span><span class="sub">@nightowl</span></li>
+        <li>${dot('pink')}<span class="name">Maya</span><button class="btn small secondary" data-open="member">Manage</button><span class="sub">@maya.k</span></li>
+        <li>${dot('sky')}<span class="name">Dev</span><button class="btn small secondary" data-open="member">Manage</button><span class="sub">@devlin</span></li>
+        <li>${dot('cyan')}<span class="name">Sam</span><button class="btn small secondary" data-open="member">Manage</button><span class="sub">@sam</span></li>
+      </ul>
+      ${S.sheet === 'member' && S.confirm === 'inline' ? memberPanel() : ''}</div>
+    <div class="card"><h3>Invites</h3>
+      <button class="btn secondary">Make an Invite</button>
+      <div class="notice" role="status"><b>Invite made</b><span>Send this link to one friend. It works once and never expires.</span></div>
+      <div class="copy"><span>dailycheckin.workers.dev/invite/k3J9…xQ</span><button class="btn small primary">Copy</button></div>
+      <p class="muted">Pending</p>
+      <ul class="list"><li><span class="dot" style="background:var(--none)"></span><span class="name">Invite made 30 Oct</span><button class="btn small danger">Cancel</button></li></ul></div>
+    <div class="card"><h3>Owner</h3>
+      <p class="muted">Hand the Group to another Member. You stay as a Member.</p>
+      <button class="btn secondary">Hand over ownership</button>
+      ${danger('Delete Thursday Squad', 'Tap again: deletes its Board and History for everyone', 'g1')}</div>` },
+
+  join: { label: 'Invite: join', top: null, plain: true, html: () => `
+    <div style="display:grid;gap:6px;padding-top:24px"><p class="muted">Maya invited you to</p><h1>Thursday Squad</h1></div>
+    <div class="card"><h3>You're logged in as Night Owl 🦉</h3><button class="btn primary">Join Thursday Squad</button></div>
+    <p class="section-title">Logged out, this page shows instead:</p>
+    <div class="card"><div class="grid2"><button class="btn small primary">Create a login</button><button class="btn small secondary">Log in</button></div><p class="muted">You'll join Thursday Squad straight after.</p></div>
+    <p class="section-title">A used or cancelled Invite:</p>
+    <div class="notice warn" role="status"><b>This Invite can't be used</b><span>It was already used or cancelled. Ask the Group's Owner for a new one.</span></div>` },
+
+  reset: { label: 'Password Reset Link', top: null, plain: true, html: () => `
+    <div style="display:grid;gap:6px;padding-top:24px"><h1>Set a new password</h1><p class="muted">For @maya.k. This link works once and expires an hour after it was made. Every device will be logged out.</p></div>
+    <form class="stack" onsubmit="event.preventDefault()">
+      ${field('New password', 'password', '', '12 to 128 characters.')}
+      <button class="btn primary">Set password</button>
+    </form>` }
+};
+function memberPanel() {
+  return `<div class="stack" style="border-top:1px solid var(--line);padding-top:14px"><h3>Maya</h3>
+    <button class="btn secondary">Make a Password Reset Link</button>
+    <button class="btn secondary">Make Maya the Owner</button>
+    ${danger('Remove Maya', 'Tap again to remove Maya', 'm1')}</div>`;
+}
+function topBar(sc) {
+  if (S.nav === 'tabs' || sc.plain) return '';
+  const right = `<a class="me" href="#profile">${dot(S.colour)}You</a>`;
+  if (sc.top === 'tonight') return `<div class="appbar"><span></span>${right}</div>`;
+  if (sc.top === 'back') return `<div class="appbar"><a class="back" href="#empty">‹ Tonight</a>${sc === SCREENS.profile ? '' : right}</div>`;
+  return '';
+}
+function tabs(sc) {
+  if (S.nav !== 'tabs' || sc.plain || S.screen === 'components') return '';
+  const cur = sc.tab || 'tonight';
+  return `<nav class="tabs" aria-label="Main"><a href="#empty" ${cur === 'tonight' ? 'aria-current="page"' : ''}><i></i>Tonight</a><a href="#group" ${cur === 'groups' ? 'aria-current="page"' : ''}><i></i>Groups</a><a href="#profile" ${cur === 'profile' ? 'aria-current="page"' : ''}><i></i>You</a></nav>`;
+}
+const NOTES = {
+  bar: '<b>Top bar.</b> Tonight is home. A "You" button with your colour opens your profile; each Board gets a "Group" link beside History for its settings. Inner pages have "‹ Tonight" to go back.',
+  tabs: '<b>Bottom tabs.</b> Tonight, Groups and You are always one tap away at the bottom of the screen.',
+  inline: '<b>Tap again.</b> A destructive button turns solid and reads "Tap again to…" for 4 seconds.',
+  sheet: '<b>Bottom sheet.</b> A destructive button opens a sheet from the bottom with the consequence and Confirm or Cancel.'
+};
+function render() {
+  const sc = SCREENS[S.screen];
+  document.getElementById('phone').innerHTML = `${topBar(sc)}<main>${sc.html()}</main>
+    <p class="about">${NOTES[S.nav]} ${NOTES[S.confirm]}</p>${tabs(sc)}${sheet()}`;
+}
+function sheet() {
+  if (!S.sheet || (S.sheet === 'member' && S.confirm === 'inline')) return '';
+  if (S.sheet === 'member') return `<div class="scrim" data-close><div class="sheet" role="dialog" aria-label="Manage Maya">${memberPanel()}<button class="btn secondary" data-close>Close</button></div></div>`;
+  const [label, text] = S.sheet;
+  return `<div class="scrim" data-close><div class="sheet" role="dialog" aria-label="${label}"><h2>${label}?</h2><p class="muted">${text}</p>
+    <button class="btn danger armed" data-close>${label}</button><button class="btn secondary" data-close>Cancel</button></div></div>`;
+}
+document.addEventListener('click', e => {
+  const t = e.target;
+  const d = t.closest('[data-danger]');
+  if (d) {
+    if (S.confirm === 'sheet') { S.sheet = [d.dataset.label, WHY[d.dataset.danger]]; render(); return; }
+    if (d.classList.contains('armed')) { d.classList.remove('armed'); d.textContent = 'Done (prototype)'; return; }
+    d.classList.add('armed'); d.textContent = d.dataset.confirm; clearTimeout(armTimer);
+    armTimer = setTimeout(() => { d.classList.remove('armed'); d.textContent = d.dataset.label; }, 4000); return;
+  }
+  if (t.closest('[data-open]')) { S.sheet = 'member'; render(); return; }
+  if (t.matches('[data-close]')) { S.sheet = null; render(); return; }
+  const tg = t.closest('[data-toggle]');
+  if (tg) { const k = tg.dataset.toggle; S.toggles[k] = !S.toggles[k]; render(); }
+});
+document.addEventListener('change', e => { if (e.target.name === 'colour') { S.colour = e.target.value; render(); } });
+const sel = document.getElementById('screen');
+for (const [k, v] of Object.entries(SCREENS)) sel.add(new Option(v.label, k));
+sel.onchange = () => { location.hash = sel.value; };
+document.getElementById('nav').onchange = e => { S.nav = e.target.value; render(); };
+document.getElementById('confirm').onchange = e => { S.confirm = e.target.value; S.sheet = null; render(); };
+function fromHash() { const h = location.hash.slice(1); if (SCREENS[h]) S.screen = h; S.sheet = null; sel.value = S.screen; render(); window.scrollTo(0, 0); }
+window.addEventListener('hashchange', fromHash); fromHash();
+</script>
+</body>
+</html>
