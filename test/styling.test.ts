@@ -67,3 +67,105 @@ describe("styled login page", () => {
     expect(html).toContain("That username and password do not match.");
   });
 });
+
+const PALETTE = ["blue", "sky", "cyan", "indigo", "violet", "purple", "pink", "slate"];
+const LABELS = ["Blue", "Sky", "Cyan", "Indigo", "Violet", "Purple", "Pink", "Slate"];
+
+/** The data-colour of every avatar dot, rendered as a span, in page order. */
+function avatarDots(html: string): string[] {
+  return [...html.matchAll(/<span[^>]*\sdata-colour="([^"]*)"[^>]*>/g)].map((match) => match[1]);
+}
+
+/** The inner HTML of every link to `href`. */
+function linksTo(html: string, href: string): string[] {
+  const links = html.matchAll(/<a\s[^>]*>[\s\S]*?<\/a>/g);
+  return [...links]
+    .map((match) => match[0])
+    .filter((link) => link.slice(0, link.indexOf(">")).includes(` href="${href}"`))
+    .map((link) => link.slice(link.indexOf(">") + 1, -"</a>".length));
+}
+
+function bodyOf(html: string): string {
+  return html.slice(html.indexOf("<body"), html.indexOf("</body>"));
+}
+
+describe("styled Setup Link page", () => {
+  it("shows one avatar dot per palette colour, each with its label, and no top bar", async () => {
+    const app = startApp();
+    const token = await app.issueSetupLink();
+    const response = await app.fetch(`/setup/${token}`);
+    const html = await response.text();
+    const body = bodyOf(html);
+
+    expect(response.status).toBe(200);
+    expect(html).not.toMatch(/\sstyle=/);
+    expect(body).toContain("Create your login</h1>");
+    expect(body).toContain("This link works once and expires an hour after it was made.");
+    expect(body).toMatch(/<button[^>]*type="submit"[^>]*>Create login<\/button>/);
+
+    const dots = avatarDots(body);
+    expect(dots).toHaveLength(8);
+    expect([...dots].sort()).toEqual([...PALETTE].sort());
+
+    const tiles = [...body.matchAll(/<label[^>]*>([\s\S]*?)<\/label>/g)].map((match) => match[1]);
+    for (const [index, name] of PALETTE.entries()) {
+      const tile = tiles.find((inner) => inner.includes(`data-colour="${name}"`));
+      expect(tile, name).toBeDefined();
+      expect(tile).toContain(`value="${name}"`);
+      expect(tile).toContain(LABELS[index]);
+    }
+
+    expect(linksTo(body, "/profile")).toEqual([]);
+    expect(linksTo(body, "/")).toEqual([]);
+  });
+
+  it("shows an unusable link with no inline styles", async () => {
+    const response = await startApp().fetch("/setup/not-a-real-token");
+    const html = await response.text();
+
+    expect(response.status).toBe(404);
+    expect(html).not.toMatch(/\sstyle=/);
+    expect(html).toMatch(/role="alert"/);
+    expect(html).toContain("This Setup Link does not work.");
+  });
+});
+
+describe("styled Tonight and profile", () => {
+  async function newMember() {
+    const app = startApp();
+    const browser = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    return browser;
+  }
+
+  it("shows the empty Tonight with the You pill in the Member's colour", async () => {
+    const browser = await newMember();
+    const response = await browser.get("/");
+    const html = await response.text();
+    const body = bodyOf(html);
+
+    expect(response.status).toBe(200);
+    expect(html).not.toMatch(/\sstyle=/);
+    expect(body).toContain("Tonight</h1>");
+    expect(body).toContain("You&#x27;re not in a Group yet");
+    expect(body).toContain("Create one and invite your friends, or open an Invite link a friend sent you.");
+    expect(body).toMatch(/<button[^>]*type="button"[^>]*>Create a Group<\/button>/);
+
+    const pills = linksTo(body, "/profile");
+    expect(pills).toHaveLength(1);
+    expect(avatarDots(pills[0])).toEqual(["pink"]);
+    expect(pills[0]).toContain("You");
+    expect(avatarDots(body)).toEqual(["pink"]);
+  });
+
+  it("shows the profile with a way back to Tonight and no link to itself", async () => {
+    const browser = await newMember();
+    const response = await browser.get("/profile");
+    const html = await response.text();
+    const body = bodyOf(html);
+
+    expect(response.status).toBe(200);
+    expect(html).not.toMatch(/\sstyle=/);
+    expect(linksTo(body, "/")).toEqual(["‹ Tonight"]);
+    expect(linksTo(body, "/profile")).toEqual([]);
+  });
+});

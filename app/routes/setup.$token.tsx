@@ -3,6 +3,7 @@ import { data, Form, redirect } from "react-router";
 import { AVATAR_COLOUR_NAMES, AVATAR_COLOURS } from "~/auth/palette";
 import { authFor, sessionCookie } from "~/auth/request";
 import { type NewLoginErrors, normaliseUsername, validateNewLogin } from "~/auth/rules";
+import { AvatarDot } from "~/components/avatar-dot";
 
 import type { Route } from "./+types/setup.$token";
 
@@ -61,21 +62,28 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
 
   if (!usable) {
     return (
-      <main>
-        <h1>Create your login</h1>
-        <p role="alert">{UNUSABLE_LINK_MESSAGE}</p>
+      <main className="page">
+        <header className="setup-header">
+          <h1>Create your login</h1>
+        </header>
+        <div className="notice-error" role="alert">
+          <p>{UNUSABLE_LINK_MESSAGE}</p>
+        </div>
       </main>
     );
   }
 
   return (
-    <main>
-      <h1>Create your login</h1>
-      <Form method="post" noValidate>
-        <p>
-          <label htmlFor="username">Username</label>
-          <br />
+    <main className="page">
+      <header className="setup-header">
+        <h1>Create your login</h1>
+        <p className="setup-note">This link works once and expires an hour after it was made.</p>
+      </header>
+      <Form method="post" className="page-form" noValidate>
+        <div className="field">
+          <label className="field-label" htmlFor="username">Username</label>
           <input
+            className="field-input"
             id="username"
             name="username"
             autoComplete="username"
@@ -84,13 +92,14 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
             aria-invalid={errors.username ? true : undefined}
             aria-describedby="username-help"
           />
-          <br />
-          <span id="username-help">{errors.username ?? "3 to 32 characters. Spaces and symbols are fine."}</span>
-        </p>
-        <p>
-          <label htmlFor="password">Password</label>
-          <br />
+          <p id="username-help" className={errors.username ? "field-error" : "field-hint"}>
+            {errors.username ?? "3 to 32 characters. Spaces and symbols are fine."}
+          </p>
+        </div>
+        <div className="field">
+          <label className="field-label" htmlFor="password">Password</label>
           <input
+            className="field-input"
             id="password"
             name="password"
             type="password"
@@ -99,41 +108,33 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
             aria-invalid={errors.password ? true : undefined}
             aria-describedby="password-help"
           />
-          <br />
-          <span id="password-help">
+          <p id="password-help" className={errors.password ? "field-error" : "field-hint"}>
             {errors.password ?? "12 to 128 characters. A phrase with spaces works well."}
-          </span>
-        </p>
-        <fieldset aria-describedby={errors.colour ? "colour-error" : undefined}>
-          <legend>Avatar colour</legend>
+          </p>
+        </div>
+        <fieldset className="picker" aria-describedby={errors.colour ? "colour-error" : undefined}>
+          <legend className="picker-legend">Avatar colour</legend>
           {AVATAR_COLOUR_NAMES.map((name) => (
-            <label key={name} style={{ display: "inline-block", marginRight: "1em" }}>
+            <label key={name} className="picker-tile">
               <input
+                className="picker-input"
                 type="radio"
                 name="colour"
                 value={name}
                 required
                 defaultChecked={actionData?.colour === name}
-              />{" "}
-              <span
-                aria-hidden="true"
-                style={{
-                  display: "inline-block",
-                  width: "1em",
-                  height: "1em",
-                  borderRadius: "50%",
-                  verticalAlign: "middle",
-                  background: AVATAR_COLOURS[name].hex,
-                }}
-              />{" "}
+              />
+              <AvatarDot colour={name} />
               {AVATAR_COLOURS[name].label}
             </label>
           ))}
-          {errors.colour ? <p id="colour-error">{errors.colour}</p> : null}
+          {errors.colour ? (
+            <p id="colour-error" className="field-error">
+              {errors.colour}
+            </p>
+          ) : null}
         </fieldset>
-        <p>
-          <button type="submit">Create login</button>
-        </p>
+        <button className="btn-primary" type="submit">Create login</button>
       </Form>
     </main>
   );
