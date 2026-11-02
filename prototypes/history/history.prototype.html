@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1a1220">
+<title>History screens</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600&family=Nunito+Sans:wght@400;700&display=swap" rel="stylesheet">
+<style>
+/* PROTOTYPE, throwaway. Ticket "History screens on a phone". Couch Co-op, Soft palette,
+   chosen type scale, components and states. Layout idea: one History page per Group with
+   the Yes-count summary on top and past nights below; switches pick the summary style
+   and whether a night opens on its own page or inline. */
+:root {
+  --bg: #1a1220; --surface: #261b2f; --row: #33253e; --line: #45344f;
+  --text: #f7eff8; --muted: #c3b2c8; --accent: #d8b4fe; --on-fill: #1a1220;
+  --yes: #8ceaa6; --maybe: #f9d280; --no: #fb9795; --none: #9a87a4;
+  --display: "Fredoka", "Trebuchet MS", system-ui, sans-serif;
+  --body: "Nunito Sans", system-ui, sans-serif;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 1.0625rem/1.5 var(--body); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.proto { background: #000; color: #fff; font: 0.8125rem/1.3 system-ui, sans-serif; padding: 8px 12px; display: flex; flex-wrap: wrap; gap: 8px 12px; }
+.proto label { display: flex; gap: 6px; align-items: center; }
+.proto select { font: inherit; padding: 6px; border-radius: 8px; background: #222; color: #fff; border: 1px solid #555; min-height: 36px; }
+.phone { max-width: 430px; margin: 0 auto; }
+.appbar { display: flex; align-items: center; justify-content: space-between; padding: 12px 16px 0; min-height: 56px; }
+.back { color: var(--accent); font: 700 1.0625rem var(--body); text-decoration: none; min-height: 44px; display: inline-flex; align-items: center; }
+.me { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px 0 10px; border-radius: 999px; background: var(--surface); border: 2px solid var(--line); color: var(--text); font: 700 0.9375rem var(--body); text-decoration: none; }
+main { padding: 8px 16px 40px; display: grid; gap: 22px; }
+h1 { font: 600 1.5rem/1.15 var(--display); margin: 0; }
+h2 { font: 600 1.25rem/1.15 var(--display); margin: 0; }
+p { margin: 0; }
+.muted { color: var(--muted); font-size: 0.9375rem; }
+.card { background: var(--surface); border-radius: 28px; padding: 18px 16px; display: grid; gap: 14px; }
+.dot { width: 16px; height: 16px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* Summary: bar list */
+.bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+.bars li { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 10px; align-items: center; }
+.bars .name { font-weight: 700; min-width: 0; overflow-wrap: anywhere; }
+.bars .count { font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bars .count small { color: var(--muted); font-weight: 400; font-size: 0.9375rem; }
+.meter { grid-column: 1 / 4; height: 10px; border-radius: 5px; background: var(--row); overflow: hidden; }
+.meter i { display: block; height: 100%; background: var(--yes); border-radius: 5px; }
+/* Summary: compact table */
+table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+th, td { padding: 8px 4px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: middle; }
+th { color: var(--muted); font: 700 0.9375rem var(--body); }
+td.n, th.n { text-align: right; white-space: nowrap; }
+td .who { display: inline-flex; gap: 8px; align-items: center; font-weight: 700; overflow-wrap: anywhere; }
+
+/* Nights */
+.nights { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.night { background: var(--row); border-radius: 18px; }
+.night > a, .night > button { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; align-items: center; padding: 12px 16px; min-height: 64px; color: var(--text); text-decoration: none; background: none; border: 0; font: inherit; text-align: left; cursor: pointer; border-radius: 18px; }
+.night .date { font-weight: 700; }
+.night .meta { grid-column: 1; color: var(--muted); font-size: 0.9375rem; font-variant-numeric: tabular-nums; }
+.state { grid-row: 1 / 3; grid-column: 2; font: 600 0.9375rem var(--display); border-radius: 999px; padding: 3px 12px; white-space: nowrap; }
+.state.on { background: var(--yes); color: var(--on-fill); }
+.state.off { background: var(--no); color: var(--on-fill); }
+.state.never { border: 2px solid var(--line); color: var(--text); }
+.state.nobody { border: 2px dashed var(--none); color: var(--muted); }
+.night .inline { padding: 0 12px 12px; }
+.more { min-height: 52px; border-radius: 999px; border: 2px solid var(--line); background: transparent; color: var(--text); font: 700 1.0625rem var(--body); width: 100%; cursor: pointer; }
+
+/* Past Board */
+.board { background: var(--surface); border-radius: 28px; overflow: hidden; }
+.inline .board { background: var(--bg); border-radius: 20px; }
+.banner { padding: 12px 20px; font: 600 1.25rem var(--display); display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; background: var(--row); }
+.inline .banner { background: var(--surface); }
+.banner.on { background: var(--yes); color: var(--on-fill); }
+.banner.off { background: var(--no); color: var(--on-fill); }
+.banner small { font: 700 0.875rem var(--body); }
+.board-body { padding: 14px 12px 16px; display: grid; gap: 8px; }
+.rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.r { display: grid; grid-template-columns: auto 1fr auto; column-gap: 12px; align-items: center; background: var(--row); border-radius: 18px; padding: 10px 14px 10px 12px; border-left: 6px solid var(--none); }
+.inline .r { background: var(--surface); }
+.r.none { background: transparent !important; border: 2px dashed var(--none); border-left-width: 6px; }
+.r .word { font: 600 1.0625rem var(--display); }
+.r.none .word { color: var(--muted); }
+.r .note { grid-column: 2 / 4; color: var(--muted); font-size: 0.9375rem; }
+.r .name { font-weight: 700; overflow-wrap: anywhere; }
+.r .left { color: var(--muted); font-weight: 400; font-size: 0.9375rem; }
+.about { padding: 14px 16px; border-radius: 18px; border: 2px dashed var(--line); color: var(--muted); font-size: 0.9375rem; }
+.about b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="proto" aria-label="Prototype controls">
+  <label>Yes counts <select id="sum"><option value="bars">Bar list</option><option value="table">Compact table</option></select></label>
+  <label>A night opens <select id="open"><option value="page">On its own page</option><option value="inline">Inline, expanding</option></select></label>
+</div>
+<div class="phone" id="app"></div>
+<script>
+const AV = { violet: '#ab8be3', pink: '#bf5da2', sky: '#58a1cf', cyan: '#3d9bac', indigo: '#8489da', slate: '#8e99ab' };
+const WORD = { yes: 'Yes', maybe: 'Maybe', no: 'No' };
+// Current Members with their Yes count over the last 30 nights and the nights they were in the Group.
+const MEMBERS = [
+  { n: 'You', c: 'violet', yes: 21, of: 30 }, { n: 'Maya', c: 'pink', yes: 18, of: 30 }, { n: 'Dev', c: 'sky', yes: 12, of: 30 },
+  { n: 'Sam 🎧 the very long display name', c: 'cyan', yes: 9, of: 30 }, { n: 'Rin', c: 'indigo', yes: 3, of: 5 }
+];
+// Past nights, newest first. Leo has since left: he shows on old Boards, not in the counts.
+const NIGHTS = [
+  { d: 'Sun 1 Nov', t: 3, s: 'on', rows: [['violet', 'You', 'yes', 'on after 9'], ['pink', 'Maya', 'yes'], ['indigo', 'Rin', 'yes'], ['sky', 'Dev', 'maybe'], ['cyan', 'Sam 🎧 the very long display name', null]] },
+  { d: 'Sat 31 Oct', t: 3, s: 'off', rows: [['violet', 'You', 'yes'], ['pink', 'Maya', 'yes'], ['sky', 'Dev', 'no', 'halloween party'], ['indigo', 'Rin', 'maybe'], ['cyan', 'Sam 🎧 the very long display name', 'no']] },
+  { d: 'Fri 30 Oct', t: 3, s: 'never', rows: [['violet', 'You', 'yes'], ['cyan', 'Sam 🎧 the very long display name', 'maybe'], ['pink', 'Maya', 'no'], ['sky', 'Dev', null], ['indigo', 'Rin', null]] },
+  { d: 'Thu 29 Oct', t: 3, s: 'nobody', rows: [['violet', 'You', null], ['pink', 'Maya', null], ['sky', 'Dev', null], ['cyan', 'Sam 🎧 the very long display name', null], ['indigo', 'Rin', null]] },
+  { d: 'Wed 28 Oct', t: 4, s: 'on', rows: [['violet', 'You', 'yes'], ['pink', 'Maya', 'yes'], ['sky', 'Dev', 'yes'], ['slate', 'Leo', 'yes', 'last night before the move'], ['cyan', 'Sam 🎧 the very long display name', 'maybe']], left: 'Leo' },
+  { d: 'Tue 27 Oct', t: 4, s: 'never', rows: [['violet', 'You', 'yes'], ['slate', 'Leo', 'maybe'], ['pink', 'Maya', 'no'], ['sky', 'Dev', null], ['cyan', 'Sam 🎧 the very long display name', null]], left: 'Leo' }
+];
+const STATE = { on: 'Game On', off: 'Game Off', never: 'Never on', nobody: 'Nobody answered' };
+const S = { sum: 'bars', open: 'page', expanded: null, night: null };
+const yesCount = n => n.rows.filter(r => r[2] === 'yes').length;
+
+function summary() {
+  const sorted = [...MEMBERS].sort((a, b) => b.yes / b.of - a.yes / a.of);
+  if (S.sum === 'bars') return `<ul class="bars">${sorted.map(m => `<li><span class="dot" style="background:${AV[m.c]}"></span>
+    <span class="name">${m.n}</span><span class="count">Yes ${m.yes} <small>of ${m.of}</small></span>
+    <span class="meter" aria-hidden="true"><i style="width:${(100 * m.yes / m.of).toFixed(0)}%"></i></span></li>`).join('')}</ul>`;
+  return `<table><thead><tr><th>Member</th><th class="n">Yes</th><th class="n">Nights</th></tr></thead><tbody>
+    ${sorted.map(m => `<tr><td><span class="who"><span class="dot" style="background:${AV[m.c]}"></span>${m.n}</span></td><td class="n">${m.yes}</td><td class="n">${m.of}</td></tr>`).join('')}</tbody></table>`;
+}
+function pastBoard(n) {
+  const sorted = [...n.rows].sort((a, b) => ({ yes: 0, maybe: 1, no: 2 }[a[2]] ?? 3) - ({ yes: 0, maybe: 1, no: 2 }[b[2]] ?? 3));
+  const cls = n.s === 'on' ? 'on' : n.s === 'off' ? 'off' : '';
+  return `<div class="board"><div class="banner ${cls}"><span>${STATE[n.s]}</span><small>${yesCount(n)} Yes · Game On at ${n.t}</small></div>
+    <div class="board-body"><ul class="rows">${sorted.map(([c, name, a, note]) => `<li class="r ${a ? '' : 'none'}" style="${a ? `border-left-color:var(--${a})` : ''}">
+      <span class="dot" style="background:${AV[c]}"></span><span class="name">${name}${n.left === name ? ' <span class="left">(left the Group)</span>' : ''}</span>
+      <span class="word" style="${a ? `color:var(--${a})` : ''}">${a ? WORD[a] : 'No answer'}</span>${note ? `<span class="note">${note}</span>` : ''}</li>`).join('')}</ul></div></div>`;
+}
+function nightRow(n, i) {
+  const meta = n.s === 'nobody' ? 'No Check-ins' : `${yesCount(n)} Yes · Game On at ${n.t}`;
+  const head = `<span class="date">${n.d}</span><span class="meta">${meta}</span><span class="state ${n.s}">${STATE[n.s]}</span>`;
+  if (S.open === 'page') return `<li class="night"><a href="#night-${i}">${head}</a></li>`;
+  const open = S.expanded === i;
+  return `<li class="night"><button data-x="${i}" aria-expanded="${open}">${head}</button>${open ? `<div class="inline">${pastBoard(n)}</div>` : ''}</li>`;
+}
+const me = `<a class="me" href="#history"><span class="dot" style="background:${AV.violet}"></span>You</a>`;
+function render() {
+  const app = document.getElementById('app');
+  if (S.open === 'page' && S.night !== null) {
+    const n = NIGHTS[S.night];
+    app.innerHTML = `<div class="appbar"><a class="back" href="#history">‹ History</a>${me}</div>
+    <main><div><p class="muted">Thursday Squad</p><h1>${n.d}</h1></div>${pastBoard(n)}
+    <p class="muted">Frozen as it stood at the Reset the next morning.</p></main>`;
+    return;
+  }
+  app.innerHTML = `<div class="appbar"><a class="back" href="#history">‹ Tonight</a>${me}</div>
+  <main>
+    <div><p class="muted">Thursday Squad</p><h1>History</h1></div>
+    <section class="card"><h2>Who usually shows up</h2><p class="muted">Yes answers over the last 30 nights, counting only nights each Member was in the Group.</p>${summary()}</section>
+    <section style="display:grid;gap:12px"><h2>Past nights</h2><ul class="nights">${NIGHTS.map(nightRow).join('')}</ul>
+      <button class="more">Show older nights</button></section>
+    <p class="about"><b>${S.sum === 'bars' ? 'Bar list' : 'Compact table'}</b>: ${S.sum === 'bars' ? 'one line per Member with "Yes 21 of 30" and a green bar showing the share. Long names wrap; nothing scrolls sideways.' : 'three narrow columns: Member, Yes and Nights. Denser, but long names squeeze the columns at large text sizes.'}
+    <b>${S.open === 'page' ? 'Own page' : 'Inline'}</b>: ${S.open === 'page' ? 'tapping a night opens its Board on a page with "‹ History" to go back.' : 'tapping a night expands its Board in the list; tap again to fold it.'}</p>
+  </main>`;
+}
+document.addEventListener('click', e => { const x = e.target.closest('[data-x]'); if (x) { const i = +x.dataset.x; S.expanded = S.expanded === i ? null : i; render(); } });
+document.getElementById('sum').onchange = e => { S.sum = e.target.value; render(); };
+document.getElementById('open').onchange = e => { S.open = e.target.value; S.night = null; S.expanded = null; if (location.hash.startsWith('#night-')) location.hash = 'history'; render(); };
+function fromHash() { const m = location.hash.match(/^#night-(\d+)$/); S.night = m ? +m[1] : null; render(); window.scrollTo(0, 0); }
+window.addEventListener('hashchange', fromHash); fromHash();
+</script>
+</body>
+</html>
