@@ -17,6 +17,7 @@ const PAIRS: Pair[] = [
   ...["--bg", "--surface", "--row"].flatMap((bg): Pair[] => [
     ["--text", bg, TEXT, "text"],
     ["--text-secondary", bg, TEXT, "secondary text"],
+    ["--control-border", bg, NON_TEXT, "outline of a field or secondary button"],
   ]),
   ["--accent", "--surface", TEXT, "link on a card"],
   ["--accent", "--bg", TEXT, "link on the page"],

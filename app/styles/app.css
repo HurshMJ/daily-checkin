@@ -186,7 +186,7 @@ input {
 
 .btn-secondary {
   background: transparent;
-  border-color: var(--line);
+  border-color: var(--control-border);
   color: var(--text);
 }
 
@@ -208,7 +208,7 @@ input {
 .btn-secondary:disabled,
 .btn-destructive:disabled {
   background: var(--disabled-fill);
-  border-color: var(--line);
+  border-color: var(--disabled-fill);
   color: var(--disabled-text);
   cursor: not-allowed;
 }
@@ -227,7 +227,7 @@ input {
   width: 100%;
   min-height: var(--control-height);
   padding: 0 1.25rem;
-  border: var(--border-width) solid var(--line);
+  border: var(--border-width) solid var(--control-border);
   border-radius: var(--radius-pill);
   background: var(--bg);
   color: var(--text);

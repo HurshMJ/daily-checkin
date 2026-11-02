@@ -10,7 +10,8 @@
   --bg: #1a1220;
   --surface: #261b2f;
   --row: #33253e;
-  --line: #45344f;
+  --line: #45344f; /* decorative dividers and card edges only */
+  --control-border: #7c6e86; /* outline of fields, secondary buttons and other controls */
   --text: #f7eff8;
   --text-secondary: #c3b2c8;
   --accent: #d8b4fe;
