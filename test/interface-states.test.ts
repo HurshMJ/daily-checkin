@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { Notice } from "~/components/notice";
 import { OfflineStatus } from "~/components/offline-bar";
 import { isSubmittingTo, SubmitButton } from "~/components/submit-button";
+import { TAP_AGAIN_MS, tapAgain, TapAgainButton } from "~/components/tap-again-button";
 
 import { startApp } from "./harness";
 
@@ -188,6 +189,55 @@ describe("SubmitButton", () => {
     expect(html).toContain('<span class="btn-ring" aria-hidden="true"></span>');
     expect(html).toContain("Logging in…");
     expect(html).not.toContain(">Log in<");
+  });
+});
+
+describe("tapAgain", () => {
+  const armedAt = 1_000_000;
+
+  it("arms a button that is not armed", () => {
+    expect(tapAgain(null, armedAt)).toBe("arm");
+  });
+
+  it("confirms a second tap inside the wait", () => {
+    expect(tapAgain(armedAt, armedAt + TAP_AGAIN_MS - 1)).toBe("confirm");
+  });
+
+  it("arms again once the wait is over", () => {
+    expect(TAP_AGAIN_MS).toBe(4000);
+    expect(tapAgain(armedAt, armedAt + TAP_AGAIN_MS)).toBe("arm");
+  });
+});
+
+describe("TapAgainButton", () => {
+  const props = {
+    label: "Log out everywhere",
+    confirmLabel: "Tap again to log out every device",
+    pendingLabel: "Logging out…",
+    pending: false,
+  };
+
+  it("is a plain destructive submit button when idle", () => {
+    const html = renderToString(createElement(TapAgainButton, props));
+
+    expect(html).toBe('<button type="submit" class="btn-destructive">Log out everywhere</button>');
+  });
+
+  it("shows the confirm label and carries the confirmation when armed", () => {
+    const html = renderToString(createElement(TapAgainButton, { ...props, armed: true }));
+
+    expect(html).toBe(
+      '<button data-armed="true" type="submit" class="btn-destructive">Tap again to log out every device</button>' +
+        '<input type="hidden" name="confirm" value="yes"/>',
+    );
+  });
+
+  it("shows the ring while the confirmed submit is pending", () => {
+    const html = renderToString(createElement(TapAgainButton, { ...props, armed: true, pending: true }));
+
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('<span class="btn-ring" aria-hidden="true"></span>');
+    expect(html).toContain("Logging out…");
   });
 });
 

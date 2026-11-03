@@ -42,8 +42,10 @@ describe("Setup Link", () => {
     // Tonight needs only the colour: the username stays out of its loader data.
     expect(page).not.toContain("Alice");
     const profile = await browser.get("/profile");
-    // React separates adjacent text nodes with <!-- --> markers; drop them to read the sentence.
-    expect((await profile.text()).replaceAll("<!-- -->", "")).toContain("Logged in as Alice.");
+    // React separates adjacent text nodes with <!-- --> markers; drop them to read the header.
+    const header = (await profile.text()).replaceAll("<!-- -->", "");
+    expect(header).toMatch(/<h1[^>]*>Alice<\/h1>/);
+    expect(header).toContain("@Alice</p>");
   });
 
   it("works only once", async () => {
@@ -232,7 +234,7 @@ describe("Sessions", () => {
     expect((await replay.get("/")).headers.get("Location")).toBe("/login");
     expect((await phone.get("/")).status).toBe(200);
 
-    const everywhere = await phone.post("/logout-everywhere", {});
+    const everywhere = await phone.post("/logout-everywhere", { confirm: "yes" });
     expect(everywhere.headers.get("Location")).toBe("/login");
     expect((await phone.get("/")).headers.get("Location")).toBe("/login");
     expect((await tablet.get("/")).headers.get("Location")).toBe("/login");
@@ -248,6 +250,35 @@ describe("Sessions", () => {
     expect(profile).toContain('action="/logout"');
     expect(profile).toContain('action="/logout-everywhere"');
     expect((await app.device().get("/profile")).headers.get("Location")).toBe("/login");
+  });
+
+  it("asks for a second tap before Log out everywhere, without JavaScript", async () => {
+    const app = startApp();
+    const phone = await app.createLogin(alice);
+    const laptop = app.device();
+    await laptop.post("/login", { username: "Alice", password: alice.password });
+
+    for (const form of [{}, { confirm: "no" }] as Record<string, string>[]) {
+      const firstTap = await phone.post("/logout-everywhere", form);
+      expect(firstTap.status).toBe(303);
+      expect(firstTap.headers.get("Location")).toBe("/profile?confirm=logout-everywhere");
+    }
+    // The unconfirmed taps ended no session.
+    expect((await phone.get("/profile")).status).toBe(200);
+    expect((await laptop.get("/profile")).status).toBe(200);
+
+    // The profile comes back armed, so the next tap carries the confirmation.
+    const armed = await (await phone.get("/profile?confirm=logout-everywhere")).text();
+    expect(armed).toMatch(/<button[^>]*data-armed="true"[^>]*>Tap again to log out every device<\/button>/);
+    expect(armed).toContain('<input type="hidden" name="confirm" value="yes"/>');
+    const idle = await (await phone.get("/profile")).text();
+    expect(idle).not.toContain("data-armed");
+    expect(idle).not.toContain('name="confirm"');
+
+    const confirmed = await phone.post("/logout-everywhere", { confirm: "yes" });
+    expect(confirmed.headers.get("Location")).toBe("/login");
+    expect((await phone.get("/")).headers.get("Location")).toBe("/login");
+    expect((await laptop.get("/")).headers.get("Location")).toBe("/login");
   });
 
   it("redirects a logged-out visit to Tonight to /login", async () => {
@@ -288,7 +319,7 @@ describe("Origin check", () => {
     const app = startApp();
     const browser = await app.createLogin(alice);
 
-    const forged = await browser.post("/logout-everywhere", {}, { origin: "https://evil.example" });
+    const forged = await browser.post("/logout-everywhere", { confirm: "yes" }, { origin: "https://evil.example" });
 
     expect(forged.status).toBe(403);
     expect((await browser.get("/")).status).toBe(200);
