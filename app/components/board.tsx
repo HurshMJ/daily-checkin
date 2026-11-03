@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 
-import { AVAILABILITY_LABELS, type Board as BoardData } from "~/checkins";
+import { AVAILABILITY_LABELS, type Board as BoardData, type BoardRow } from "~/checkins";
 
 export const NO_ANSWER = "No answer yet";
 export const NOBODY_ANSWERED = "Nobody has answered yet tonight.";
@@ -8,9 +8,9 @@ export const NOBODY_ANSWERED = "Nobody has answered yet tonight.";
 /**
  * One Group's Board for tonight: a banner with the pill and the Yes count,
  * the Group name, then one row per Member in Board order. The viewer's own
- * row reads "You", and the Board ends with its links: the Group page now,
- * History with ticket 21. Rows and the banner reach the CSS through
- * data-availability and data-state.
+ * row reads "You", and the Board ends with its links: the Group page and its
+ * History. Rows and the banner reach the CSS through data-availability and
+ * data-state.
  */
 export function Board({ board, viewerId }: { board: BoardData; viewerId: number }) {
   const headingId = `board-${board.groupId}`;
@@ -26,24 +26,47 @@ export function Board({ board, viewerId }: { board: BoardData; viewerId: number 
       <h2 id={headingId} className="board-name">
         {board.name}
       </h2>
-      <ul className="board-rows">
-        {board.rows.map((row) => (
-          <li key={row.memberId} className="board-row" data-availability={row.availability ?? "none"}>
-            <span className="board-row-name">{row.memberId === viewerId ? "You" : row.username}</span>
-            <span className="board-row-answer">
-              {row.availability ? AVAILABILITY_LABELS[row.availability] : NO_ANSWER}
-            </span>
-            {row.note ? <p className="board-row-note">{row.note}</p> : null}
-          </li>
-        ))}
-      </ul>
+      <BoardRows rows={board.rows} viewerId={viewerId} noAnswer={NO_ANSWER} />
       {nobodyAnswered ? <p className="board-empty">{NOBODY_ANSWERED}</p> : null}
       <p className="board-links">
-        {/* The Group name gives each "Group" link its own description. */}
+        {/* The Group name gives each Board's links their own description. */}
         <Link to={`/groups/${board.groupId}`} aria-describedby={headingId}>
           Group
         </Link>
+        <Link to={`/groups/${board.groupId}/history`} aria-describedby={headingId}>
+          History
+        </Link>
       </p>
     </section>
+  );
+}
+
+/**
+ * A Board's rows, already in Board order, tonight's or a past night's. The
+ * viewer's own row reads "You"; a row without a Check-in reads `noAnswer`;
+ * a row marked `left` names a Member who has since left the Group.
+ */
+export function BoardRows({
+  rows,
+  viewerId,
+  noAnswer,
+}: {
+  rows: readonly (BoardRow & { left?: boolean })[];
+  viewerId: number;
+  noAnswer: string;
+}) {
+  return (
+    <ul className="board-rows">
+      {rows.map((row) => (
+        <li key={row.memberId} className="board-row" data-availability={row.availability ?? "none"}>
+          <span className="board-row-name">
+            {row.memberId === viewerId ? "You" : row.username}
+            {row.left ? <span className="board-row-left"> (left the Group)</span> : null}
+          </span>
+          <span className="board-row-answer">{row.availability ? AVAILABILITY_LABELS[row.availability] : noAnswer}</span>
+          {row.note ? <p className="board-row-note">{row.note}</p> : null}
+        </li>
+      ))}
+    </ul>
   );
 }

@@ -11,6 +11,8 @@ export default [
   route("profile", "routes/profile.tsx"),
   route("groups/new", "routes/groups.new.tsx"),
   route("groups/:groupId", "routes/groups.$groupId.tsx"),
+  route("groups/:groupId/history", "routes/groups.$groupId.history.tsx"),
+  route("groups/:groupId/history/:night", "routes/groups.$groupId.history.$night.tsx"),
   route("invite", "routes/invite.tsx"),
   route("invite/:token", "routes/invite.$token.tsx"),
 ] satisfies RouteConfig;

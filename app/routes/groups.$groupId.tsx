@@ -9,7 +9,7 @@ import { isConfirmed, TapAgainButton } from "~/components/tap-again-button";
 import { ThresholdStepper } from "~/components/threshold-stepper";
 import { TopBar } from "~/components/top-bar";
 import { zoneDayTime } from "~/game-night";
-import { createGroups, MAX_GROUP_NAME_LENGTH, MAX_THRESHOLD, MIN_THRESHOLD } from "~/groups";
+import { createGroups, MAX_GROUP_NAME_LENGTH, MAX_THRESHOLD, MIN_THRESHOLD, parseGroupId } from "~/groups";
 import { createInvites, MAX_INVITE_LABEL_LENGTH } from "~/invites";
 import { appContext } from "~/services";
 
@@ -28,8 +28,8 @@ const notFound = () => data("Not found", { status: 404 });
 
 /** The Group, for one of its Members; anyone else gets the 404 a missing Group gets. */
 async function memberGroup(context: Route.LoaderArgs["context"], memberId: number, rawId: string) {
-  const groupId = /^[1-9][0-9]{0,15}$/.test(rawId) ? Number(rawId) : Number.NaN;
-  if (!Number.isSafeInteger(groupId)) return null;
+  const groupId = parseGroupId(rawId);
+  if (groupId === null) return null;
   return createGroups(context.get(appContext)).groupFor(memberId, groupId);
 }
 
