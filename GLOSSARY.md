@@ -68,6 +68,10 @@ _Avoid_: Rollover, midnight
 The record of a Group's past Game Nights and the Check-ins each one had.
 _Avoid_: Archive, log, past Boards
 
+**Past night**:
+One Game Night in a Group's History, frozen as it stood at the Reset that ended it: its date, the Game On Threshold in force, its final state, and every Member who was in the Group then, with their Check-in or no answer.
+_Avoid_: Snapshot, history entry, old Board
+
 ### Game On
 
 **Game On Threshold**:
@@ -81,6 +85,10 @@ _Avoid_: Confirmed, happening
 **Game Off**:
 The state of a Group's Game Night when its Yes count drops back below the Game On Threshold after it was Game On.
 _Avoid_: Cancelled, called off
+
+**Never on**:
+The final state of a past night whose Group never reached Game On before the Reset.
+_Avoid_: Not happening, failed
 
 ### Notifications
 
