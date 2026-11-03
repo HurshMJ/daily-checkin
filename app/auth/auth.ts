@@ -9,7 +9,15 @@ import {
 } from "./crypto";
 import { createLoginLimits } from "./login-limits";
 import type { AvatarColour } from "./palette";
-import { type NewLoginForm, normalisePassword, passwordError, passwordTooLong, usernameKey } from "./rules";
+import {
+  type NewLoginForm,
+  normalisePassword,
+  normaliseUsername,
+  passwordError,
+  passwordTooLong,
+  usernameKey,
+  usernameTooLong,
+} from "./rules";
 
 /** A session lasts this long after the Member's latest request. */
 export const SESSION_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
@@ -118,12 +126,18 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
      * Checks a username in any casing and a password, within the login limits
      * for the username and the client IP. Returns a new session token, or null
      * without saying which part was wrong or whether a limit refused it. A
-     * refused attempt, or a password longer than any login can have, costs no
-     * lookup or PBKDF2 work; a successful login clears the username's failures.
+     * refused attempt, or a username or password longer than any login can
+     * have, costs no lookup or PBKDF2 work; an over-long username records an
+     * IP failure only, so no stored key is longer than a username. A
+     * successful login clears the username's failures.
      */
     async logIn(username: string, typedPassword: string, ip: string): Promise<string | null> {
       const key = usernameKey(username);
       if (!(await limits.admit(key, ip))) return null;
+      if (usernameTooLong(normaliseUsername(username))) {
+        await limits.recordIpFailure(ip);
+        return null;
+      }
 
       const password = normalisePassword(typedPassword);
       if (passwordTooLong(password)) {
@@ -164,8 +178,9 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
      * Changes a Member's password after checking the current one, within the
      * same login limits as logging in: a wrong current password counts as a
      * failed login, and a locked username or limited IP is refused. On success
-     * the new hash is stored and every other session of the Member ends, in
-     * one D1 batch; the session with `keepToken` stays.
+     * the new hash is stored, the username's failures are cleared and every
+     * other session of the Member ends, in one D1 batch; the session with
+     * `keepToken` stays.
      */
     async changePassword(
       member: CurrentMember,
@@ -207,6 +222,7 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
             "UPDATE members SET password_hash = ?1, password_salt = ?2, password_iterations = ?3 WHERE id = ?4",
           )
           .bind(hashed.hash, hashed.salt, hashed.iterations, member.id),
+        limits.clearUsername(key),
         await endOtherSessionsStatement(member.id, keepToken),
       ]);
       return { ok: true };

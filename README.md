@@ -126,8 +126,13 @@ Wrong passwords are limited, with no Operator command needed to clear them:
 - **20 wrong passwords from one IP within an hour** refuse every login from
   that IP, the correct password included, until the oldest of those failures
   is an hour old. The IP is Cloudflare's `CF-Connecting-IP`.
+- An IPv6 client is counted by its /64 prefix, so rotating addresses inside one
+  network shares one count; IPv4 addresses are counted one by one.
 - Unknown usernames count like real ones, and a wrong current password on the
-  profile's Change password form counts too; the same limits block it.
+  profile's Change password form counts too; the same limits block it. A
+  successful password change clears the username's count, like a login.
+- A typed username longer than 32 characters cannot belong to anyone: it is
+  refused at once and counts for the IP only.
 - The login page shows one message for every refusal, "That username and
   password do not match.", so it never tells whether a username exists or a
   limit applied.

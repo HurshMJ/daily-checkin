@@ -2,6 +2,8 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAuth } from "~/auth/auth";
+import { clientIp } from "~/auth/login-limits";
+import { MAX_USERNAME_LENGTH } from "~/auth/rules";
 
 import { startApp } from "./harness";
 
@@ -33,8 +35,13 @@ async function failureRows(kind: "username" | "ip", key: string): Promise<string
   return results.map((row) => row.failed_at);
 }
 
-afterEach(() => {
+afterEach(async () => {
   vi.restoreAllMocks();
+  // Every stored username key fits a username, whatever the test typed.
+  const row = await env.DB.prepare(
+    "SELECT max(length(key)) AS longest FROM login_failures WHERE kind = 'username'",
+  ).first<{ longest: number | null }>();
+  expect(row?.longest ?? 0).toBeLessThanOrEqual(MAX_USERNAME_LENGTH);
 });
 
 describe("migration 0004", () => {
@@ -178,5 +185,73 @@ describe("PBKDF2 work", () => {
     await auth.logIn("Carol", alice.password, IP);
     await auth.logIn("Dave", "a".repeat(129), OTHER_IP);
     expect(deriveBits).not.toHaveBeenCalled();
+  });
+});
+
+describe("over-long username", () => {
+  it("is refused before the lookup and PBKDF2, recording an IP failure only", async () => {
+    const { auth } = await setup();
+    const deriveBits = vi.spyOn(crypto.subtle, "deriveBits");
+
+    expect(await auth.logIn("a".repeat(1000), WRONG, IP)).toBeNull();
+
+    expect(deriveBits).not.toHaveBeenCalled();
+    expect(await failureRows("ip", IP)).toEqual([START]);
+    const { results } = await env.DB.prepare("SELECT key FROM login_failures WHERE kind = 'username'").all();
+    expect(results).toEqual([]);
+  });
+
+  it("records nothing from an IP at its limit", async () => {
+    const { auth } = await setup();
+    for (let i = 0; i < 20; i++) await auth.logIn(`guess ${i}`, WRONG, IP);
+
+    expect(await auth.logIn("a".repeat(1000), WRONG, IP)).toBeNull();
+
+    expect(await failureRows("ip", IP)).toHaveLength(20);
+  });
+
+  it("stops at the maximum: a 32-code-point unknown username runs PBKDF2 and records both failures", async () => {
+    const { auth } = await setup();
+    const name = "🎲".repeat(MAX_USERNAME_LENGTH);
+    const deriveBits = vi.spyOn(crypto.subtle, "deriveBits");
+
+    expect(await auth.logIn(name, WRONG, IP)).toBeNull();
+
+    expect(deriveBits).toHaveBeenCalledTimes(1);
+    expect(await failureRows("username", name)).toEqual([START]);
+    expect(await failureRows("ip", IP)).toEqual([START]);
+  });
+});
+
+describe("clientIp", () => {
+  function ipOf(header?: string): string {
+    return clientIp(new Request("https://example.com/login", { headers: header ? { "CF-Connecting-IP": header } : {} }));
+  }
+
+  it("keys an IPv6 address by its /64 prefix in one canonical form", () => {
+    expect(ipOf("2001:db8:1:2::1")).toBe("2001:0db8:0001:0002::/64");
+    expect(ipOf("2001:DB8:1:2:ffff:ffff:ffff:ffff")).toBe("2001:0db8:0001:0002::/64");
+    expect(ipOf("2001:db8:1:3::1")).toBe("2001:0db8:0001:0003::/64");
+  });
+
+  it("expands :: compression at either end", () => {
+    expect(ipOf("::1")).toBe("0000:0000:0000:0000::/64");
+    expect(ipOf("2001:db8::")).toBe("2001:0db8:0000:0000::/64");
+    expect(ipOf("::ffff:192.0.2.1")).toBe("0000:0000:0000:0000::/64");
+  });
+
+  it("keeps IPv4 and a missing header as they are", () => {
+    expect(ipOf("203.0.113.7")).toBe("203.0.113.7");
+    expect(ipOf()).toBe("unknown");
+  });
+
+  it("makes addresses in one /64 share the IP limit", async () => {
+    const { auth } = await setup();
+    for (let i = 1; i <= 20; i++) {
+      expect(await auth.logIn(`guess ${i}`, WRONG, ipOf(`2001:db8:1:2::${i.toString(16)}`))).toBeNull();
+    }
+
+    expect(await auth.logIn("Alice", alice.password, ipOf("2001:db8:1:2::21"))).toBeNull();
+    expect(await auth.logIn("Alice", alice.password, ipOf("2001:db8:1:3::21"))).toEqual(expect.any(String));
   });
 });

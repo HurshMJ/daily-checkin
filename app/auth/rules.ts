@@ -31,10 +31,18 @@ export function passwordTooLong(password: string): boolean {
   return codePoints(password) > MAX_PASSWORD_LENGTH;
 }
 
+/** The longest username accepted, in code points of the normalised form. */
+export const MAX_USERNAME_LENGTH = 32;
+
+/** True when a normalised username is longer than any login can have. */
+export function usernameTooLong(username: string): boolean {
+  return codePoints(username) > MAX_USERNAME_LENGTH;
+}
+
 /** Returns an error message for the username field, or null when it is fine. */
 export function usernameError(username: string): string | null {
   const length = codePoints(username);
-  if (length < 3 || length > 32) return "Use 3 to 32 characters.";
+  if (length < 3 || length > MAX_USERNAME_LENGTH) return `Use 3 to ${MAX_USERNAME_LENGTH} characters.`;
   if (hasInvisible(username)) return INVISIBLE_MESSAGE;
   return null;
 }

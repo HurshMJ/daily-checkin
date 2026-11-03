@@ -13,10 +13,38 @@ export const IP_WINDOW_MS = 60 * 60 * 1000;
 
 /**
  * The key an IP's failures are counted under: the client address Cloudflare
- * puts in CF-Connecting-IP, or `unknown` when the header is missing.
+ * puts in CF-Connecting-IP, or `unknown` when the header is missing. An IPv6
+ * address is keyed by its /64 prefix (see `ipv6Prefix64`), since one
+ * subscriber network can rotate through the addresses inside it.
  */
 export function clientIp(request: Request): string {
-  return request.headers.get("CF-Connecting-IP") || "unknown";
+  const ip = request.headers.get("CF-Connecting-IP") || "unknown";
+  return ip.includes(":") ? ipv6Prefix64(ip) : ip;
+}
+
+/**
+ * The /64 prefix of an IPv6 address in one canonical form: the first four
+ * hextets expanded to four lower-case digits, then `::/64`, so
+ * `2001:DB8:1:2::1` gives `2001:0db8:0001:0002::/64`. `::` compression and a
+ * trailing dotted IPv4 part are expanded first. A malformed address is
+ * returned lower-cased as it is.
+ */
+export function ipv6Prefix64(address: string): string {
+  const lower = address.toLowerCase();
+  const halves = lower.split("::");
+  if (halves.length > 2) return lower;
+  const groups = (half: string | undefined) =>
+    !half ? [] : half.split(":").flatMap((part) => (part.includes(".") ? ["0", "0"] : [part]));
+  const head = groups(halves[0]);
+  const tail = groups(halves[1]);
+  const missing = 8 - head.length - tail.length;
+  if (halves.length === 2 ? missing < 1 : missing !== 0) return lower;
+  const hextets = [...head, ...Array<string>(missing).fill("0"), ...tail];
+  if (!hextets.every((part) => /^[0-9a-f]{1,4}$/.test(part))) return lower;
+  return `${hextets
+    .slice(0, 4)
+    .map((part) => part.padStart(4, "0"))
+    .join(":")}::/64`;
 }
 
 /**
@@ -92,7 +120,16 @@ export function createLoginLimits({ db, clock }: { db: D1Database; clock: Clock 
       await db.batch([insertFailure("username", usernameKey, now), insertFailure("ip", ip, now), prune(now)]);
     },
 
-    /** Deletes a username's failures; batch it with the successful login. */
+    /**
+     * Records a failed attempt that counts for the IP only, such as a username
+     * no login can have, and prunes old rows.
+     */
+    async recordIpFailure(ip: string): Promise<void> {
+      const now = clock.now();
+      await db.batch([insertFailure("ip", ip, now), prune(now)]);
+    },
+
+    /** Deletes a username's failures; batch it with the successful login or password change. */
     clearUsername(usernameKey: string): D1PreparedStatement {
       return db.prepare("DELETE FROM login_failures WHERE kind = 'username' AND key = ?1").bind(usernameKey);
     },

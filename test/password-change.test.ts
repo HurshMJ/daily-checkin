@@ -170,6 +170,25 @@ describe("changePassword", () => {
     expect(results).toEqual([]);
   });
 
+  it("clears the username's failures on success, while the IP's failures stay", async () => {
+    const { auth, token, member } = await setup();
+    for (let i = 0; i < 4; i++) {
+      expect(await auth.changePassword(member, token, "not my password", NEW_PASSWORD, IP)).toEqual({
+        ok: false,
+        reason: "wrong-current",
+      });
+    }
+
+    expect(await auth.changePassword(member, token, alice.password, NEW_PASSWORD, IP)).toEqual({ ok: true });
+
+    const count = (kind: string, key: string) =>
+      env.DB.prepare("SELECT count(*) AS n FROM login_failures WHERE kind = ?1 AND key = ?2")
+        .bind(kind, key)
+        .first<{ n: number }>();
+    expect(await count("username", "alice")).toEqual({ n: 0 });
+    expect(await count("ip", IP)).toEqual({ n: 4 });
+  });
+
   it("keeps the given session and ends the others", async () => {
     const { auth, token, member } = await setup();
     const other = (await auth.logIn("Alice", alice.password, IP)) ?? "";
