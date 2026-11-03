@@ -249,6 +249,17 @@ function ruleOf(selector: string): string {
   return rules[0][2];
 }
 
+describe("Check-in live region", () => {
+  it("is never hidden from assistive tech, so Saving your answer… is announced", () => {
+    const css = appCss.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, selectors]) => selectors.includes(".checkin-status"));
+    expect(rules.length).toBeGreaterThan(0);
+    for (const [, selectors, declarations] of rules) {
+      expect(declarations, selectors.trim()).not.toMatch(/display\s*:\s*none|visibility\s*:\s*hidden/);
+    }
+  });
+});
+
 describe("styled Group page", () => {
   async function ownerPage() {
     const app = startApp();
