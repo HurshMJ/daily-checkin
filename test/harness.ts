@@ -109,9 +109,22 @@ export function startApp(
     return {
       cookies,
       get: (path: string) => send(path, "GET"),
+      /** Opens a link like a browser: follows a 303 with the cookies it set and returns the page. */
+      async open(link: string) {
+        const first = await send(link, "GET");
+        const to = first.headers.get("Location");
+        return first.status === 303 && to ? send(to, "GET") : first;
+      },
       post: (path: string, form: Record<string, string>, options?: DeviceRequestOptions) =>
         send(path, "POST", form, options),
     };
+  }
+
+  /** A new device that has opened the link, so its cookie holds the link's token. */
+  async function deviceWithLink(link: string) {
+    const browser = device();
+    await browser.get(link);
+    return browser;
   }
 
   return {
@@ -119,6 +132,7 @@ export function startApp(
     push,
     fetch: fetchApp,
     device,
+    deviceWithLink,
 
     /**
      * Does what the Operator command does, through the same SQL builder, at
@@ -134,8 +148,8 @@ export function startApp(
     /** Creates a login through a new Setup Link and returns the logged-in device. */
     async createLogin(login: { username: string; password: string; colour?: string }) {
       const token = await this.issueSetupLink(`login ${login.username.replace(/[^A-Za-z0-9]/g, "")}`.slice(0, 40));
-      const browser = device();
-      const response = await browser.post(`/setup/${token}`, { colour: "blue", ...login });
+      const browser = await deviceWithLink(`/setup/${token}`);
+      const response = await browser.post("/setup", { colour: "blue", ...login });
       if (response.status !== 302) throw new Error(`createLogin failed with ${response.status}`);
       return browser;
     },

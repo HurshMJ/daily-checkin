@@ -19,7 +19,7 @@ describe("Setup Link", () => {
     const token = await app.issueSetupLink("first");
     const browser = app.device();
 
-    const form = await browser.get(`/setup/${token}`);
+    const form = await browser.open(`/setup/${token}`);
     expect(form.status).toBe(200);
     expect(form.headers.get("Referrer-Policy")).toBe("no-referrer");
     const html = await form.text();
@@ -28,7 +28,7 @@ describe("Setup Link", () => {
       expect(html).toContain(colour);
     }
 
-    const created = await browser.post(`/setup/${token}`, alice);
+    const created = await browser.post("/setup", alice);
     expect(created.status).toBe(302);
     expect(created.headers.get("Location")).toBe("/");
 
@@ -51,12 +51,12 @@ describe("Setup Link", () => {
   it("works only once", async () => {
     const app = startApp();
     const token = await app.issueSetupLink();
-    await app.device().post(`/setup/${token}`, alice);
+    await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", alice);
 
     const again = app.device();
-    const opened = await again.get(`/setup/${token}`);
+    const opened = await again.open(`/setup/${token}`);
     expect(await opened.text()).toContain(NO_LINK);
-    const reused = await again.post(`/setup/${token}`, { ...alice, username: "Mallory" });
+    const reused = await again.post("/setup", { ...alice, username: "Mallory" });
     expect(reused.status).toBe(404);
     expect(await reused.text()).toContain(NO_LINK);
     expect(again.cookies.has(SESSION_COOKIE)).toBe(false);
@@ -66,9 +66,10 @@ describe("Setup Link", () => {
     const app = startApp();
     const token = await app.issueSetupLink();
 
+    const [one, two] = [await app.deviceWithLink(`/setup/${token}`), await app.deviceWithLink(`/setup/${token}`)];
     const results = await Promise.all([
-      app.device().post(`/setup/${token}`, { ...alice, username: "First one" }),
-      app.device().post(`/setup/${token}`, { ...alice, username: "Second one" }),
+      one.post("/setup", { ...alice, username: "First one" }),
+      two.post("/setup", { ...alice, username: "Second one" }),
     ]);
 
     expect(results.map((r) => r.status).sort()).toEqual([302, 404]);
@@ -81,9 +82,10 @@ describe("Setup Link", () => {
     const first = await app.issueSetupLink("one");
     const second = await app.issueSetupLink("two");
 
+    const [one, two] = [await app.deviceWithLink(`/setup/${first}`), await app.deviceWithLink(`/setup/${second}`)];
     const results = await Promise.all([
-      app.device().post(`/setup/${first}`, alice),
-      app.device().post(`/setup/${second}`, { ...alice, username: "ALICE" }),
+      one.post("/setup", alice),
+      two.post("/setup", { ...alice, username: "ALICE" }),
     ]);
 
     expect(results.map((r) => r.status).sort()).toEqual([302, 400]);
@@ -96,11 +98,11 @@ describe("Setup Link", () => {
     const token = await app.issueSetupLink();
 
     app.clock.set("2026-11-03T12:59:59Z");
-    expect((await app.device().get(`/setup/${token}`)).status).toBe(200);
+    expect((await app.device().open(`/setup/${token}`)).status).toBe(200);
     app.clock.set("2026-11-03T13:00:01Z");
     const late = app.device();
-    expect(await (await late.get(`/setup/${token}`)).text()).toContain(NO_LINK);
-    expect((await late.post(`/setup/${token}`, alice)).status).toBe(404);
+    expect(await (await late.open(`/setup/${token}`)).text()).toContain(NO_LINK);
+    expect((await late.post("/setup", alice)).status).toBe(404);
   });
 
   it("is cancelled when the command is rerun for the same label, but not for another label", async () => {
@@ -109,16 +111,16 @@ describe("Setup Link", () => {
     const other = await app.issueSetupLink("smoke");
     const second = await app.issueSetupLink("friends");
 
-    expect(await (await app.device().get(`/setup/${first}`)).text()).toContain(NO_LINK);
-    expect((await app.device().post(`/setup/${first}`, alice)).status).toBe(404);
-    expect((await app.device().get(`/setup/${other}`)).status).toBe(200);
-    expect((await app.device().post(`/setup/${second}`, alice)).status).toBe(302);
+    expect(await (await app.device().open(`/setup/${first}`)).text()).toContain(NO_LINK);
+    expect((await (await app.deviceWithLink(`/setup/${first}`)).post("/setup", alice)).status).toBe(404);
+    expect((await app.device().open(`/setup/${other}`)).status).toBe(200);
+    expect((await (await app.deviceWithLink(`/setup/${second}`)).post("/setup", alice)).status).toBe(302);
   });
 
   it("gives an unknown token the same message", async () => {
     const app = startApp();
 
-    const response = await app.device().get("/setup/not-a-real-token");
+    const response = await app.device().open("/setup/not-a-real-token");
 
     expect(response.status).toBe(404);
     expect(await response.text()).toContain(NO_LINK);
@@ -343,10 +345,10 @@ describe("Origin check", () => {
     await app.createLogin(alice);
     const token = await app.issueSetupLink("second");
 
-    const crossSite = await app.device().post(`/setup/${token}`, { ...alice, username: "Mallory" }, {
+    const crossSite = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { ...alice, username: "Mallory" }, {
       origin: "https://evil.example",
     });
-    const noOrigin = await app.device().post(`/setup/${token}`, { ...alice, username: "Mallory" }, { origin: null });
+    const noOrigin = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { ...alice, username: "Mallory" }, { origin: null });
     const crossLogin = app.device();
     const login = await crossLogin.post("/login", { username: "Alice", password: alice.password }, {
       origin: "https://evil.example",
@@ -358,7 +360,7 @@ describe("Origin check", () => {
     expect(crossLogin.cookies.has(SESSION_COOKIE)).toBe(false);
     const { results } = await env.DB.prepare("SELECT username FROM members").all();
     expect(results).toEqual([{ username: "Alice" }]);
-    expect((await app.device().post(`/setup/${token}`, { ...alice, username: "Bob" })).status).toBe(302);
+    expect((await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { ...alice, username: "Bob" })).status).toBe(302);
   });
 
   it("refuses a cross-origin Log out everywhere, leaving the sessions alone", async () => {

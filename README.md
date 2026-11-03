@@ -102,6 +102,8 @@ npm run operator:setup-link -- <label>
 Prints `https://daily-checkin.hurshm05.workers.dev/setup/<token>`. Opening it
 lets one person create a login (username, password and avatar colour) without
 joining any Group; it is how the very first Member gets in.
+Opening it moves the token into a short-lived cookie (`__Host-setup`, one
+hour) and redirects to `/setup`, so no later URL or log line carries it.
 
 - The link works once and expires 1 hour after it is printed.
 - Rerunning the command with the same label cancels that label's older unused
@@ -153,6 +155,8 @@ from each Board on Tonight):
   shown again; the pending list names each Invite by its optional label ("Who
   is it for?", up to 40 characters, seen only by the Owner) or by when it was
   made, in UTC+4.
+- Opening the link moves its token into a short-lived cookie (`__Host-invite`,
+  one hour) and redirects to `/invite`, so no later URL or log line carries it.
 - Each Invite works **once** and **never expires**. The Owner can cancel a
   pending Invite; a used, cancelled or unknown link shows one warning, "This
   Invite has been used or cancelled."

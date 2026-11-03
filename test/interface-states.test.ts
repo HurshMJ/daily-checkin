@@ -42,7 +42,7 @@ describe("field errors", () => {
   it("marks a too-short username invalid and points it at an Error: line", async () => {
     const app = startApp();
     const token = await app.issueSetupLink();
-    const response = await app.device().post(`/setup/${token}`, { ...alice, username: "Al" });
+    const response = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { ...alice, username: "Al" });
     const html = bodyOf(await response.text());
 
     expect(response.status).toBe(400);
@@ -59,7 +59,7 @@ describe("field errors", () => {
   it("marks a too-short password invalid and points it at an Error: line", async () => {
     const app = startApp();
     const token = await app.issueSetupLink();
-    const response = await app.device().post(`/setup/${token}`, { ...alice, password: "short" });
+    const response = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { ...alice, password: "short" });
     const html = bodyOf(await response.text());
 
     expect(response.status).toBe(400);
@@ -70,7 +70,7 @@ describe("field errors", () => {
   it("points the colour picker at an Error: line when no colour is chosen", async () => {
     const app = startApp();
     const token = await app.issueSetupLink();
-    const response = await app.device().post(`/setup/${token}`, { username: "Alice", password: alice.password });
+    const response = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { username: "Alice", password: alice.password });
     const html = bodyOf(await response.text());
 
     expect(response.status).toBe(400);
@@ -85,7 +85,7 @@ describe("field errors", () => {
   it("shows no Error: line on a fresh form", async () => {
     const app = startApp();
     const token = await app.issueSetupLink();
-    const html = bodyOf(await (await app.fetch(`/setup/${token}`)).text());
+    const html = bodyOf(await (await app.device().open(`/setup/${token}`)).text());
 
     expect(html).not.toContain("Error: ");
     expect(html).not.toContain("aria-invalid");
@@ -116,8 +116,8 @@ describe("idle forms", () => {
     const browser = await app.createLogin({ username: "Alice", password: alice.password });
     return {
       login: await (await app.fetch("/login")).text(),
-      setup: await (await app.fetch(`/setup/${token}`)).text(),
-      unusable: await (await app.fetch("/setup/not-a-real-token")).text(),
+      setup: await (await app.device().open(`/setup/${token}`)).text(),
+      unusable: await (await app.device().open("/setup/not-a-real-token")).text(),
       tonight: await (await browser.get("/")).text(),
       profile: await (await browser.get("/profile")).text(),
     };

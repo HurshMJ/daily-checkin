@@ -97,7 +97,7 @@ describe("styled Setup Link page", () => {
   it("shows one avatar dot per palette colour, each with its label, and no top bar", async () => {
     const app = startApp();
     const token = await app.issueSetupLink();
-    const response = await app.fetch(`/setup/${token}`);
+    const response = await app.device().open(`/setup/${token}`);
     const html = await response.text();
     const body = bodyOf(html);
 
@@ -124,7 +124,7 @@ describe("styled Setup Link page", () => {
   });
 
   it("shows an unusable link with no inline styles", async () => {
-    const response = await startApp().fetch("/setup/not-a-real-token");
+    const response = await startApp().device().open("/setup/not-a-real-token");
     const html = await response.text();
 
     expect(response.status).toBe(404);

@@ -3,6 +3,7 @@ import { createContext, type MiddlewareFunction, redirect, type RouterContextPro
 import { appContext } from "~/services";
 
 import { type Auth, createAuth, type CurrentMember, SESSION_LIFETIME_MS } from "./auth";
+import { isTokenShaped } from "./crypto";
 
 /**
  * The session cookie. The `__Host-` prefix makes the browser refuse it unless
@@ -10,23 +11,66 @@ import { type Auth, createAuth, type CurrentMember, SESSION_LIFETIME_MS } from "
  */
 export const SESSION_COOKIE = "__Host-session";
 
+/**
+ * The link cookies. Opening `/invite/<token>` or `/setup/<token>` moves the
+ * token into one of these and redirects to a page whose URL holds no token.
+ */
+export const INVITE_COOKIE = "__Host-invite";
+export const SETUP_COOKIE = "__Host-setup";
+export type LinkCookie = typeof INVITE_COOKIE | typeof SETUP_COOKIE;
+
+/** A link cookie lasts an hour, the life of a Setup Link. */
+export const LINK_COOKIE_MAX_AGE_S = 60 * 60;
+
 const COOKIE_ATTRIBUTES = "HttpOnly; Secure; SameSite=Lax; Path=/";
 
+function cookie(name: string, value: string, maxAgeS: number): string {
+  return `${name}=${value}; Max-Age=${maxAgeS}; ${COOKIE_ATTRIBUTES}`;
+}
+
 export function sessionCookie(token: string): string {
-  return `${SESSION_COOKIE}=${token}; Max-Age=${SESSION_LIFETIME_MS / 1000}; ${COOKIE_ATTRIBUTES}`;
+  return cookie(SESSION_COOKIE, token, SESSION_LIFETIME_MS / 1000);
+}
+
+export function linkCookie(name: LinkCookie, token: string): string {
+  return cookie(name, token, LINK_COOKIE_MAX_AGE_S);
+}
+
+/** A Set-Cookie value that removes the named cookie. */
+export function clearedCookie(name: string): string {
+  return cookie(name, "", 0);
 }
 
 export function clearedSessionCookie(): string {
-  return `${SESSION_COOKIE}=; Max-Age=0; ${COOKIE_ATTRIBUTES}`;
+  return clearedCookie(SESSION_COOKIE);
 }
 
-/** The session token from the request's cookie, if there is one. */
-export function readSessionToken(request: Request): string | null {
+/** Response headers that set each of the given Set-Cookie values. */
+export function setCookies(...values: string[]): [string, string][] {
+  return values.map((value) => ["Set-Cookie", value]);
+}
+
+/** The named cookie's value from the request, if it has a non-empty one. */
+export function readCookie(request: Request, name: string): string | null {
   for (const part of (request.headers.get("Cookie") ?? "").split(";")) {
-    const [name, ...value] = part.trim().split("=");
-    if (name === SESSION_COOKIE) return value.join("=") || null;
+    const [key, ...value] = part.trim().split("=");
+    if (key === name) return value.join("=") || null;
   }
   return null;
+}
+
+/** The paths of the redirect-only link routes: `/invite/<token>` and `/setup/<token>`. */
+const LINK_PATH = /^\/(invite|setup)\/[^/]+\/?$/;
+
+/**
+ * The redirect-only link route: a token of the right shape goes into the link
+ * cookie, and every request goes on to `to`, a page whose URL holds no token.
+ * It reads no D1 and logs nothing, so the token in this one URL reaches no log.
+ */
+export function moveTokenToCookie(token: string, name: LinkCookie, to: string): Response {
+  const headers = new Headers({ Location: to, "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" });
+  if (isTokenShaped(token)) headers.append("Set-Cookie", linkCookie(name, token));
+  return new Response(null, { status: 303, headers });
 }
 
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -63,10 +107,12 @@ export function authFor(context: ReadContext): Auth {
 /**
  * Root middleware: resolves the session cookie once per request, renews the
  * session in D1, and sends the renewed cookie, unless the route itself set
- * or cleared the session cookie (log in, log out).
+ * or cleared the session cookie (log in, log out). It skips the redirect-only
+ * link routes, so a request whose URL holds a token never touches D1.
  */
 export const sessionMiddleware: MiddlewareFunction<Response> = async ({ request, context }, next) => {
-  const token = readSessionToken(request);
+  if (LINK_PATH.test(new URL(request.url).pathname)) return next();
+  const token = readCookie(request, SESSION_COOKIE);
   const member = token ? await authFor(context).resolveSession(token) : null;
   context.set(currentSessionContext, member && token ? { member, token } : null);
 

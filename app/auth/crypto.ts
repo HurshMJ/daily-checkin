@@ -34,6 +34,11 @@ export function randomToken(): string {
   return toBase64Url(crypto.getRandomValues(new Uint8Array(32)));
 }
 
+/** Whether a string has the shape randomToken() makes: 43 base64url characters. */
+export function isTokenShaped(value: string): boolean {
+  return /^[A-Za-z0-9_-]{43}$/.test(value);
+}
+
 /** What D1 stores for a token: its SHA-256 as 64 lower-case hex digits. */
 export async function hashToken(token: string): Promise<string> {
   return toHex(await crypto.subtle.digest("SHA-256", encoder.encode(token)));

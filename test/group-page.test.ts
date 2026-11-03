@@ -132,7 +132,7 @@ describe("making and cancelling Invites on the Group page", () => {
     expect(pendingTiles(reloaded)[0]).toBe("Made 3 Nov, 16:30");
 
     // The new link works for someone with no login.
-    const invite = await app.fetch(new URL(link!).pathname);
+    const invite = await app.device().open(new URL(link!).pathname);
     expect(invite.status).toBe(200);
   });
 
@@ -173,7 +173,7 @@ describe("making and cancelling Invites on the Group page", () => {
     expect(response.status).toBe(303);
     expect(response.headers.get("Location")).toBe(page);
     expect(pendingTiles(mainOf(await (await alice.get(page)).text()))).toEqual([]);
-    const invite = await app.fetch(link.pathname);
+    const invite = await app.device().open(link.pathname);
     expect(invite.status).toBe(404);
     expect(await invite.text()).toContain("This Invite has been used or cancelled.");
   });
