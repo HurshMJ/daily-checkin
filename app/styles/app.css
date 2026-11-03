@@ -550,3 +550,230 @@ input {
 .picker .field-error {
   grid-column: 1 / -1;
 }
+
+/* Tonight: the title with the line saying how many Boards the answer reaches. */
+.tonight-header {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.tonight-reach {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
+
+/* Check-in: three equal answer tiles, the saving line, then the Note. */
+.checkin-tiles {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.checkin-answer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: var(--answer-tile-height);
+  padding: 0 0.5rem;
+  border: var(--border-width) solid var(--control-border);
+  border-radius: var(--radius-tile);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-display);
+  font-size: var(--size-banner);
+  font-weight: 600;
+  line-height: var(--line-height-heading);
+  cursor: pointer;
+}
+
+.checkin-ring {
+  flex: none;
+  width: var(--answer-ring-size);
+  height: var(--answer-ring-size);
+  border: var(--border-width) solid currentColor;
+  border-radius: 50%;
+}
+
+.checkin-answer[data-availability="yes"] .checkin-ring {
+  border-color: var(--yes);
+}
+
+.checkin-answer[data-availability="maybe"] .checkin-ring {
+  border-color: var(--maybe);
+}
+
+.checkin-answer[data-availability="no"] .checkin-ring {
+  border-color: var(--no);
+}
+
+.checkin-answer[aria-pressed="true"] {
+  color: var(--on-fill);
+}
+
+.checkin-answer[aria-pressed="true"] .checkin-ring {
+  border-color: var(--on-fill);
+}
+
+.checkin-answer[data-availability="yes"][aria-pressed="true"] {
+  border-color: var(--yes);
+  background: var(--yes);
+}
+
+.checkin-answer[data-availability="maybe"][aria-pressed="true"] {
+  border-color: var(--maybe);
+  background: var(--maybe);
+}
+
+.checkin-answer[data-availability="no"][aria-pressed="true"] {
+  border-color: var(--no);
+  background: var(--no);
+}
+
+/* Saving: the tapped tile dims; the pressed tile stays on the saved answer. */
+.checkin-answer[aria-busy="true"] {
+  opacity: var(--pending-opacity);
+  cursor: progress;
+}
+
+.checkin-status {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
+
+.checkin-status:empty {
+  display: none;
+}
+
+.checkin,
+.checkin-form,
+.checkin-note {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.checkin-note {
+  gap: 0.375rem;
+}
+
+.checkin-note-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+}
+
+.checkin-note-row .btn-secondary {
+  width: auto;
+}
+
+/* Board: a banner with the pill and the count, the Group name, then one row
+   per Member with a stripe in its Availability's colour. */
+.board-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1rem;
+  padding: 0.75rem 1rem;
+  border-radius: var(--radius-row);
+  background: var(--row);
+  color: var(--text);
+}
+
+.board-banner[data-state="on"] {
+  background: var(--yes);
+  color: var(--on-fill);
+}
+
+.board-banner[data-state="off"] {
+  background: var(--no);
+  color: var(--on-fill);
+}
+
+.board-pill {
+  font-family: var(--font-display);
+  font-size: var(--size-banner);
+  font-weight: 600;
+  line-height: var(--line-height-heading);
+}
+
+.board-count {
+  margin-left: auto;
+  font-size: var(--size-secondary);
+  font-weight: 700;
+}
+
+.board-name {
+  font-size: var(--size-banner);
+}
+
+.board-rows {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.board-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  column-gap: 0.75rem;
+  padding: 0.625rem 1rem;
+  border-left: var(--stripe-width) solid var(--row);
+  border-radius: var(--radius-row);
+  background: var(--row);
+}
+
+.board-row[data-availability="yes"] {
+  border-left-color: var(--yes);
+}
+
+.board-row[data-availability="maybe"] {
+  border-left-color: var(--maybe);
+}
+
+.board-row[data-availability="no"] {
+  border-left-color: var(--no);
+}
+
+.board-row[data-availability="none"] {
+  border: var(--border-width) dashed var(--no-answer);
+  background: transparent;
+}
+
+.board-row-name {
+  font-weight: 700;
+}
+
+.board-row-answer {
+  font-weight: 700;
+}
+
+.board-row[data-availability="yes"] .board-row-answer {
+  color: var(--yes);
+}
+
+.board-row[data-availability="maybe"] .board-row-answer {
+  color: var(--maybe);
+}
+
+.board-row[data-availability="no"] .board-row-answer {
+  color: var(--no);
+}
+
+.board-row[data-availability="none"] .board-row-answer {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.board-row-note {
+  grid-column: 1 / -1;
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
+
+.board-empty {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}

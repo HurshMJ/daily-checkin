@@ -63,6 +63,10 @@
   --border-width: 2px;
   --focus-width: 2px;
   --focus-offset: 2px;
+  --answer-ring-size: 0.875rem; /* the small ring on each answer tile */
+
+  /* Opacity */
+  --pending-opacity: 0.6; /* the tapped answer tile while it saves */
 
   /* Motion */
   --duration: 150ms;
