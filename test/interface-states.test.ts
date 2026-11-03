@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import { Notice } from "~/components/notice";
 import { OfflineStatus } from "~/components/offline-bar";
-import { SubmitButton } from "~/components/submit-button";
+import { isSubmittingTo, SubmitButton } from "~/components/submit-button";
 
 import { startApp } from "./harness";
 
@@ -73,7 +73,10 @@ describe("field errors", () => {
     const html = bodyOf(await response.text());
 
     expect(response.status).toBe(400);
-    expect(html).toMatch(/<fieldset[^>]*aria-describedby="colour-error"[^>]*>/);
+    const fieldset = html.match(/<fieldset[^>]*>/)![0];
+    expect(fieldset).toContain('role="radiogroup"');
+    expect(fieldset).toContain('aria-invalid="true"');
+    expect(fieldset).toContain('aria-describedby="colour-error"');
     expect(tagWithId(html, "colour-error")).toContain('class="field-error"');
     expect(textOfId(html, "colour-error")).toBe("Error: Choose a colour.");
   });
@@ -85,6 +88,9 @@ describe("field errors", () => {
 
     expect(html).not.toContain("Error: ");
     expect(html).not.toContain("aria-invalid");
+    const fieldset = html.match(/<fieldset[^>]*>/)![0];
+    expect(fieldset).toContain('role="radiogroup"');
+    expect(fieldset).not.toContain("aria-describedby");
   });
 });
 
@@ -141,6 +147,24 @@ describe("idle forms", () => {
       // The empty live region is there, so the bar is announced when it appears.
       expect(bodyOf(html), name).toContain('<div class="offline-status" role="status"></div>');
     }
+  });
+});
+
+describe("isSubmittingTo", () => {
+  it("is false while idle", () => {
+    expect(isSubmittingTo({ state: "idle" }, "/logout")).toBe(false);
+  });
+
+  it("is true while submitting to this action", () => {
+    expect(isSubmittingTo({ state: "submitting", formAction: "/logout" }, "/logout")).toBe(true);
+  });
+
+  it("stays true while loading the redirect that follows this action", () => {
+    expect(isSubmittingTo({ state: "loading", formAction: "/logout" }, "/logout")).toBe(true);
+  });
+
+  it("is false while submitting to another action", () => {
+    expect(isSubmittingTo({ state: "submitting", formAction: "/logout-everywhere" }, "/logout")).toBe(false);
   });
 });
 

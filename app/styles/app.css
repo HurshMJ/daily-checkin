@@ -457,7 +457,12 @@ input {
   min-width: 0;
   margin: 0;
   padding: 0;
-  border: 0;
+  /* Transparent until invalid, so the error border never shifts the tiles. */
+  border: var(--border-width) solid transparent;
+}
+
+.picker[aria-invalid="true"] {
+  border-color: var(--no);
 }
 
 .picker-legend {

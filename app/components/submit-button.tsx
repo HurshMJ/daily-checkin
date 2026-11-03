@@ -1,14 +1,20 @@
 import { useFormAction, useNavigation } from "react-router";
 
 /**
+ * True while a navigation submits to `formAction`, through the redirect that
+ * follows it (React Router keeps formAction set while it loads the target).
+ */
+export function isSubmittingTo(navigation: { state: string; formAction?: string }, formAction: string): boolean {
+  return navigation.state !== "idle" && navigation.formAction === formAction;
+}
+
+/**
  * True while a submission to this form's action is in flight, through the
  * redirect that follows it. Pass the Form's `action`, or nothing for a form
  * that posts to its own route, so two forms on one page never both pend.
  */
 export function useSubmitting(action?: string): boolean {
-  const navigation = useNavigation();
-  const formAction = useFormAction(action);
-  return navigation.state !== "idle" && navigation.formAction === formAction;
+  return isSubmittingTo(useNavigation(), useFormAction(action));
 }
 
 /**

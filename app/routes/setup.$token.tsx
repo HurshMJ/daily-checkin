@@ -4,6 +4,7 @@ import { AVATAR_COLOUR_NAMES, AVATAR_COLOURS } from "~/auth/palette";
 import { authFor, sessionCookie } from "~/auth/request";
 import { type NewLoginErrors, normaliseUsername, validateNewLogin } from "~/auth/rules";
 import { AvatarDot } from "~/components/avatar-dot";
+import { FieldError } from "~/components/field-error";
 import { Notice } from "~/components/notice";
 import { OfflineBar } from "~/components/offline-bar";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
@@ -101,9 +102,13 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
               aria-invalid={errors.username ? true : undefined}
               aria-describedby="username-help"
             />
-            <p id="username-help" className={errors.username ? "field-error" : "field-hint"}>
-              {errors.username ? `Error: ${errors.username}` : "3 to 32 characters. Spaces and symbols are fine."}
-            </p>
+            {errors.username ? (
+              <FieldError id="username-help">{errors.username}</FieldError>
+            ) : (
+              <p id="username-help" className="field-hint">
+                3 to 32 characters. Spaces and symbols are fine.
+              </p>
+            )}
           </div>
           <div className="field">
             <label className="field-label" htmlFor="password">Password</label>
@@ -117,11 +122,20 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
               aria-invalid={errors.password ? true : undefined}
               aria-describedby="password-help"
             />
-            <p id="password-help" className={errors.password ? "field-error" : "field-hint"}>
-              {errors.password ? `Error: ${errors.password}` : "12 to 128 characters. A phrase with spaces works well."}
-            </p>
+            {errors.password ? (
+              <FieldError id="password-help">{errors.password}</FieldError>
+            ) : (
+              <p id="password-help" className="field-hint">
+                12 to 128 characters. A phrase with spaces works well.
+              </p>
+            )}
           </div>
-          <fieldset className="picker" aria-describedby={errors.colour ? "colour-error" : undefined}>
+          <fieldset
+            className="picker"
+            role="radiogroup"
+            aria-invalid={errors.colour ? true : undefined}
+            aria-describedby={errors.colour ? "colour-error" : undefined}
+          >
             <legend className="picker-legend">Avatar colour</legend>
             {AVATAR_COLOUR_NAMES.map((name) => (
               <label key={name} className="picker-tile">
@@ -137,11 +151,7 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
                 {AVATAR_COLOURS[name].label}
               </label>
             ))}
-            {errors.colour ? (
-              <p id="colour-error" className="field-error">
-                {`Error: ${errors.colour}`}
-              </p>
-            ) : null}
+            {errors.colour ? <FieldError id="colour-error">{errors.colour}</FieldError> : null}
           </fieldset>
           <SubmitButton
             pending={submitting}
