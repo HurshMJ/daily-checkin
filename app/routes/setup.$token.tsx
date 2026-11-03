@@ -1,10 +1,8 @@
 import { data, Form, redirect } from "react-router";
 
-import { AVATAR_COLOUR_NAMES, AVATAR_COLOURS } from "~/auth/palette";
 import { authFor, sessionCookie } from "~/auth/request";
 import { type NewLoginErrors, normaliseUsername, validateNewLogin } from "~/auth/rules";
-import { AvatarDot } from "~/components/avatar-dot";
-import { FieldError } from "~/components/field-error";
+import { NewLoginFields } from "~/components/login-fields";
 import { Notice } from "~/components/notice";
 import { OfflineBar } from "~/components/offline-bar";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
@@ -90,69 +88,7 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
           <p className="setup-note">This link works once and expires an hour after it was made.</p>
         </header>
         <Form method="post" className="page-form" noValidate>
-          <div className="field">
-            <label className="field-label" htmlFor="username">Username</label>
-            <input
-              className="field-input"
-              id="username"
-              name="username"
-              autoComplete="username"
-              required
-              defaultValue={actionData?.username}
-              aria-invalid={errors.username ? true : undefined}
-              aria-describedby="username-help"
-            />
-            {errors.username ? (
-              <FieldError id="username-help">{errors.username}</FieldError>
-            ) : (
-              <p id="username-help" className="field-hint">
-                3 to 32 characters. Spaces and symbols are fine.
-              </p>
-            )}
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="password">Password</label>
-            <input
-              className="field-input"
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="new-password"
-              required
-              aria-invalid={errors.password ? true : undefined}
-              aria-describedby="password-help"
-            />
-            {errors.password ? (
-              <FieldError id="password-help">{errors.password}</FieldError>
-            ) : (
-              <p id="password-help" className="field-hint">
-                12 to 128 characters. A phrase with spaces works well.
-              </p>
-            )}
-          </div>
-          <fieldset
-            className="picker"
-            role="radiogroup"
-            aria-invalid={errors.colour ? true : undefined}
-            aria-describedby={errors.colour ? "colour-error" : undefined}
-          >
-            <legend className="picker-legend">Avatar colour</legend>
-            {AVATAR_COLOUR_NAMES.map((name) => (
-              <label key={name} className="picker-tile">
-                <input
-                  className="picker-input"
-                  type="radio"
-                  name="colour"
-                  value={name}
-                  required
-                  defaultChecked={actionData?.colour === name}
-                />
-                <AvatarDot colour={name} />
-                {AVATAR_COLOURS[name].label}
-              </label>
-            ))}
-            {errors.colour ? <FieldError id="colour-error">{errors.colour}</FieldError> : null}
-          </fieldset>
+          <NewLoginFields errors={errors} username={actionData?.username} colour={actionData?.colour} />
           <SubmitButton
             pending={submitting}
             label="Create login"

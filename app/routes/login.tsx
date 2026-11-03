@@ -2,6 +2,7 @@ import { data, Form, redirect } from "react-router";
 
 import { clientIp } from "~/auth/login-limits";
 import { authFor, currentSession, sessionCookie } from "~/auth/request";
+import { LoginFields } from "~/components/login-fields";
 import { Notice } from "~/components/notice";
 import { OfflineBar } from "~/components/offline-bar";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
@@ -47,28 +48,7 @@ export default function Login({ actionData }: Route.ComponentProps) {
           </Notice>
         ) : null}
         <Form method="post" className="page-form">
-          <div className="field">
-            <label className="field-label" htmlFor="username">Username</label>
-            <input
-              className="field-input"
-              id="username"
-              name="username"
-              autoComplete="username"
-              required
-              defaultValue={actionData?.username}
-            />
-          </div>
-          <div className="field">
-            <label className="field-label" htmlFor="password">Password</label>
-            <input
-              className="field-input"
-              id="password"
-              name="password"
-              type="password"
-              autoComplete="current-password"
-              required
-            />
-          </div>
+          <LoginFields username={actionData?.username} />
           <SubmitButton pending={submitting} label="Log in" pendingLabel="Logging in…" className="btn-primary" />
         </Form>
         <p className="login-hint">No login yet? Ask a friend in your Group for an Invite.</p>

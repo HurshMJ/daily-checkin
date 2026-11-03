@@ -1,3 +1,4 @@
+import { claimInviteStatement, joinMembershipStatement } from "~/invites";
 import type { Clock } from "~/services";
 
 import {
@@ -43,8 +44,9 @@ export type ChangePasswordResult =
 const DUMMY_HASH = { hash: "0".repeat(64), salt: "0".repeat(32) };
 
 /**
- * Logins, sessions and Setup Links, on D1 and the injected clock. Raw tokens
- * leave this module only to go into a cookie; D1 sees their hashes.
+ * Logins, sessions, Setup Links and creating a login from an Invite, on D1
+ * and the injected clock. Raw tokens leave this module only to go into a
+ * cookie; D1 sees their hashes.
  */
 export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
   const db = env.DB;
@@ -59,6 +61,57 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     return db
       .prepare("DELETE FROM sessions WHERE member_id = ?1 AND token_hash != ?2")
       .bind(memberId, await hashToken(keepToken));
+  }
+
+  /**
+   * Creates a Member and their first session after `claim`, a link's claim
+   * statement, in one D1 batch, which is one transaction. Each insert runs
+   * only when the statement before it changed one row (`changes() = 1`), so
+   * nothing is written unless the claim succeeded and two racing uses cannot
+   * both succeed. `then` runs after the session, gated the same way.
+   */
+  async function createLoginAfterClaim(
+    now: Date,
+    form: NewLoginForm,
+    claim: D1PreparedStatement,
+    then: D1PreparedStatement[],
+  ): Promise<CreateLoginResult> {
+    const nowIso = now.toISOString();
+    const key = usernameKey(form.username);
+
+    const taken = await db.prepare("SELECT 1 FROM members WHERE username_lower = ?1").bind(key).first();
+    if (taken) return { ok: false, reason: "username-taken" };
+
+    const password = await hashPassword(form.password, iterationsFromEnv(env.PBKDF2_ITERATIONS));
+    const sessionToken = randomToken();
+
+    let claimed: D1Result[];
+    try {
+      claimed = await db.batch([
+        claim,
+        db
+          .prepare(
+            `INSERT INTO members (username, username_lower, colour, password_hash, password_salt, password_iterations, created_at)
+             SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE changes() = 1`,
+          )
+          .bind(form.username, key, form.colour, password.hash, password.salt, password.iterations, nowIso),
+        db
+          .prepare(
+            `INSERT INTO sessions (token_hash, member_id, expires_at, created_at)
+             SELECT ?1, id, ?2, ?3 FROM members WHERE username_lower = ?4 AND changes() = 1`,
+          )
+          .bind(await hashToken(sessionToken), sessionExpiry(now), nowIso, key),
+        ...then,
+      ]);
+    } catch (error) {
+      // Someone took the username between the check above and the batch.
+      if (String(error).includes("UNIQUE constraint failed: members.username_lower")) {
+        return { ok: false, reason: "username-taken" };
+      }
+      throw error;
+    }
+    if (claimed[0].meta.changes !== 1) return { ok: false, reason: "link-unusable" };
+    return { ok: true, sessionToken };
   }
 
   return {
@@ -81,45 +134,26 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
      */
     async createLoginFromSetupLink(token: string, form: NewLoginForm): Promise<CreateLoginResult> {
       const now = clock.now();
+      const claim = db
+        .prepare(
+          "UPDATE setup_links SET used_at = ?1 WHERE token_hash = ?2 AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?1",
+        )
+        .bind(now.toISOString(), await hashToken(token));
+      return createLoginAfterClaim(now, form, claim, []);
+    },
+
+    /**
+     * Uses an Invite to create a Member, log them in and join them to the
+     * Invite's Group, in one D1 batch gated on the Invite's claim like a Setup
+     * Link. A new Member has no Check-in yet, so joining cannot change Game On.
+     */
+    async createLoginFromInvite(token: string, form: NewLoginForm): Promise<CreateLoginResult> {
+      const now = clock.now();
       const nowIso = now.toISOString();
-      const key = usernameKey(form.username);
-
-      const taken = await db.prepare("SELECT 1 FROM members WHERE username_lower = ?1").bind(key).first();
-      if (taken) return { ok: false, reason: "username-taken" };
-
-      const password = await hashPassword(form.password, iterationsFromEnv(env.PBKDF2_ITERATIONS));
-      const sessionToken = randomToken();
-
-      let claimed: D1Result[];
-      try {
-        claimed = await db.batch([
-          db
-            .prepare(
-              "UPDATE setup_links SET used_at = ?1 WHERE token_hash = ?2 AND used_at IS NULL AND cancelled_at IS NULL AND expires_at > ?1",
-            )
-            .bind(nowIso, await hashToken(token)),
-          db
-            .prepare(
-              `INSERT INTO members (username, username_lower, colour, password_hash, password_salt, password_iterations, created_at)
-               SELECT ?1, ?2, ?3, ?4, ?5, ?6, ?7 WHERE changes() = 1`,
-            )
-            .bind(form.username, key, form.colour, password.hash, password.salt, password.iterations, nowIso),
-          db
-            .prepare(
-              `INSERT INTO sessions (token_hash, member_id, expires_at, created_at)
-               SELECT ?1, id, ?2, ?3 FROM members WHERE username_lower = ?4 AND changes() = 1`,
-            )
-            .bind(await hashToken(sessionToken), sessionExpiry(now), nowIso, key),
-        ]);
-      } catch (error) {
-        // Someone took the username between the check above and the batch.
-        if (String(error).includes("UNIQUE constraint failed: members.username_lower")) {
-          return { ok: false, reason: "username-taken" };
-        }
-        throw error;
-      }
-      if (claimed[0].meta.changes !== 1) return { ok: false, reason: "link-unusable" };
-      return { ok: true, sessionToken };
+      const tokenHash = await hashToken(token);
+      return createLoginAfterClaim(now, form, claimInviteStatement(db, tokenHash, nowIso), [
+        joinMembershipStatement(db, tokenHash, nowIso, { usernameLower: usernameKey(form.username) }),
+      ]);
     },
 
     /**

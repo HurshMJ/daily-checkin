@@ -9,4 +9,5 @@ export default [
   route("logout-everywhere", "routes/logout-everywhere.ts"),
   route("profile", "routes/profile.tsx"),
   route("groups/new", "routes/groups.new.tsx"),
+  route("invite/:token", "routes/invite.$token.tsx"),
 ] satisfies RouteConfig;
