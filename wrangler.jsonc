@@ -4,7 +4,13 @@
 	"compatibility_date": "2026-10-23",
 	"main": "./workers/app.ts",
 	"workers_dev": true,
-	"observability": { "enabled": true },
+	"observability": {
+		"enabled": true,
+		// Invocation logs record each request URL, and /invite/<token> and
+		// /setup/<token> carry raw link tokens. Turn them off; the app's own
+		// console logs stay in Workers Logs.
+		"logs": { "invocation_logs": false }
+	},
 	"vars": {
 		// Iterations for new password hashes (each hash keeps its own count).
 		// 100000 is the Workers maximum. Lower it if the smoke login hits the
