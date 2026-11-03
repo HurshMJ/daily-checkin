@@ -138,6 +138,32 @@ export function createInvites({ env, clock }: { env: Env; clock: Clock }) {
     return row !== null;
   }
 
+  /**
+   * What the Invite page shows for a token. The inviter is named by their
+   * username until ticket 24 adds Display Names, read at view time so a
+   * rename shows at once.
+   */
+  async function inviteFor(token: string, viewerId: number | null = null): Promise<InviteView> {
+    const row = await db
+      .prepare(
+        `SELECT g.id, g.name, p.username AS inviter,
+                EXISTS (SELECT 1 FROM memberships m WHERE m.group_id = g.id AND m.member_id = ?2) AS already
+         FROM invites i JOIN groups g ON g.id = i.group_id
+         LEFT JOIN members p ON p.id = i.created_by
+         WHERE i.token_hash = ?1 AND ${usable("i")}`,
+      )
+      .bind(await hashToken(token), viewerId)
+      .first<{ id: number; name: string; inviter: string | null; already: number }>();
+    if (!row) return { usable: false };
+    return {
+      usable: true,
+      groupId: row.id,
+      groupName: row.name,
+      inviterName: row.inviter,
+      alreadyMember: row.already === 1,
+    };
+  }
+
   return {
     /**
      * Makes an Invite to the Group, only for its current Owner. The owner
@@ -194,31 +220,7 @@ export function createInvites({ env, clock }: { env: Env; clock: Clock }) {
       return result.meta.changes === 1 ? { ok: true } : { ok: false, reason: "not-pending" };
     },
 
-    /**
-     * What the Invite page shows for a token. The inviter is named by their
-     * username until ticket 24 adds Display Names, read at view time so a
-     * rename shows at once.
-     */
-    async inviteFor(token: string, viewerId: number | null = null): Promise<InviteView> {
-      const row = await db
-        .prepare(
-          `SELECT g.id, g.name, p.username AS inviter,
-                  EXISTS (SELECT 1 FROM memberships m WHERE m.group_id = g.id AND m.member_id = ?2) AS already
-           FROM invites i JOIN groups g ON g.id = i.group_id
-           LEFT JOIN members p ON p.id = i.created_by
-           WHERE i.token_hash = ?1 AND ${usable("i")}`,
-        )
-        .bind(await hashToken(token), viewerId)
-        .first<{ id: number; name: string; inviter: string | null; already: number }>();
-      if (!row) return { usable: false };
-      return {
-        usable: true,
-        groupId: row.id,
-        groupName: row.name,
-        inviterName: row.inviter,
-        alreadyMember: row.already === 1,
-      };
-    },
+    inviteFor,
 
     /**
      * Joins an existing Member to the Invite's Group: the claim, the
@@ -231,7 +233,7 @@ export function createInvites({ env, clock }: { env: Env; clock: Clock }) {
       const [claim] = await db.batch(joinStatements(db, memberId, tokenHash, clock.now()));
       if (claim.meta.changes === 1) return "joined";
 
-      const view = await this.inviteFor(token, memberId);
+      const view = await inviteFor(token, memberId);
       return view.usable && view.alreadyMember ? "already-member" : "unusable";
     },
   };
