@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { startApp } from "./harness";
+import { tokens } from "./tokens";
 
 const LATIN_FONTS = [
   "/fonts/fredoka-600-latin.woff2",
@@ -187,5 +188,52 @@ describe("styled Tonight and profile", () => {
     expect(card![1]).toMatch(
       /<form[^>]*action="\/logout"[\s\S]*>Log out<\/button>[\s\S]*<form[^>]*action="\/logout-everywhere"[\s\S]*>Log out everywhere<\/button>/,
     );
+  });
+});
+
+/** The <head> of a page. */
+function headOf(html: string): string {
+  return html.slice(html.indexOf("<head>"), html.indexOf("</head>"));
+}
+
+/** The one tag in `head` that matches `pattern`. */
+function oneTag(head: string, pattern: RegExp): string {
+  const tags = head.match(new RegExp(pattern, "g")) ?? [];
+  expect(tags, String(pattern)).toHaveLength(1);
+  return tags[0] ?? "";
+}
+
+describe("installed look in every page head", () => {
+  async function pages() {
+    const login = await (await startApp().fetch("/login")).text();
+    const browser = await startApp().createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    const tonight = await (await browser.get("/")).text();
+    return { login, tonight };
+  }
+
+  it("links the manifest and icons and sets the theme colour to --bg", async () => {
+    for (const [name, html] of Object.entries(await pages())) {
+      const head = headOf(html);
+
+      const manifest = oneTag(head, /<link[^>]*rel="manifest"[^>]*>/);
+      expect(manifest, name).toContain('href="/manifest.webmanifest"');
+
+      const icon = oneTag(head, /<link[^>]*rel="icon"[^>]*>/);
+      expect(icon, name).toContain('href="/favicon.svg"');
+      expect(icon, name).toContain('type="image/svg+xml"');
+
+      const touchIcon = oneTag(head, /<link[^>]*rel="apple-touch-icon"[^>]*>/);
+      expect(touchIcon, name).toContain('href="/apple-touch-icon.png"');
+
+      const themeColour = oneTag(head, /<meta[^>]*name="theme-color"[^>]*>/);
+      expect(themeColour, name).toContain(`content="${tokens.get("--bg")}"`);
+    }
+  });
+
+  it("adds no Apple launch images or standalone meta", async () => {
+    for (const [name, html] of Object.entries(await pages())) {
+      expect(html, name).not.toContain("apple-mobile-web-app-capable");
+      expect(html, name).not.toContain("apple-touch-startup-image");
+    }
   });
 });
