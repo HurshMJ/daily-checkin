@@ -1,5 +1,6 @@
 import { data, Form, redirect } from "react-router";
 
+import { clientIp } from "~/auth/login-limits";
 import { authFor, currentSession, sessionCookie } from "~/auth/request";
 import { Notice } from "~/components/notice";
 import { OfflineBar } from "~/components/offline-bar";
@@ -7,7 +8,8 @@ import { SubmitButton, useSubmitting } from "~/components/submit-button";
 
 import type { Route } from "./+types/login";
 
-// One message for every failure, so it never tells whether a username exists.
+// One message for every failure, so it never tells whether a username exists
+// or whether a login limit refused the attempt.
 export const LOGIN_FAILED_MESSAGE = "That username and password do not match.";
 
 export function meta(_: Route.MetaArgs) {
@@ -24,7 +26,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const username = String(form.get("username") ?? "");
   const password = String(form.get("password") ?? "");
 
-  const token = await authFor(context).logIn(username, password);
+  const token = await authFor(context).logIn(username, password, clientIp(request));
   if (!token) return data({ error: LOGIN_FAILED_MESSAGE, username }, { status: 401 });
   return redirect("/", { headers: { "Set-Cookie": sessionCookie(token) } });
 }

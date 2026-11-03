@@ -115,6 +115,33 @@ joining any Group; it is how the very first Member gets in.
 Treat the link like a password until it is used: anyone holding it can create
 a login.
 
+### Login limits
+
+Wrong passwords are limited, with no Operator command needed to clear them:
+
+- **5 wrong passwords for one username within 15 minutes** lock that username
+  for 15 minutes from the 5th. During the lock every login, the correct
+  password included, is refused; attempts during the lock do not extend it.
+  A successful login clears the username's count.
+- **20 wrong passwords from one IP within an hour** refuse every login from
+  that IP, the correct password included, until the oldest of those failures
+  is an hour old. The IP is Cloudflare's `CF-Connecting-IP`.
+- An IPv6 client is counted by its /64 prefix, so rotating addresses inside one
+  network shares one count; IPv4 addresses are counted one by one.
+- Unknown usernames count like real ones, and a wrong current password on the
+  profile's Change password form counts too; the same limits block it. A
+  successful password change clears the username's count, like a login.
+- A typed username longer than 32 characters cannot belong to anyone: it is
+  refused at once and counts for the IP only.
+- The login page shows one message for every refusal, "That username and
+  password do not match.", so it never tells whether a username exists or a
+  limit applied.
+
+The failures live in the `login_failures` table (migration 0004); rows older
+than an hour are deleted whenever a new failure is recorded. Two attempts at
+the same instant can both pass a limit check, so a burst may get one or two
+attempts past a limit.
+
 ## Tests
 
 ```sh
@@ -185,9 +212,14 @@ The last step logs in as a dedicated smoke-test login that belongs to no Group:
 it posts the credentials to `/login`, opens Tonight with the new session and
 expects the empty state with "Create a Group", then logs out. The password
 reaches `curl` on standard input and is never printed. The login request is
-tried up to 3 times, 5 seconds apart, because the new version can take a few
-seconds to reach every edge location; the other requests are tried once. Any
-failure fails the run.
+tried up to 3 times, 5 seconds apart, while it gets no response or a 5xx,
+because the new version can take a few seconds to reach every edge location;
+any other answer, such as a 401 for a wrong password, fails at once, and the
+other requests are tried once. Any failure fails the run.
+
+A wrong `SMOKE_PASSWORD` therefore costs one failed login per run. Five runs
+within 15 minutes lock the smoke login (see *Login limits*); the lock clears
+itself 15 minutes after the 5th failure, so fix the secret and rerun then.
 
 The smoke step runs after Deploy, so **a red Smoke login after a green Deploy
 means the new code is already live**. Roll back with `npx wrangler rollback`

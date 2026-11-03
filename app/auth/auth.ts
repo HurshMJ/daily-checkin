@@ -7,8 +7,17 @@ import {
   randomToken,
   verifyPassword,
 } from "./crypto";
+import { createLoginLimits } from "./login-limits";
 import type { AvatarColour } from "./palette";
-import { type NewLoginForm, normalisePassword, passwordTooLong, usernameKey } from "./rules";
+import {
+  type NewLoginForm,
+  normalisePassword,
+  normaliseUsername,
+  passwordError,
+  passwordTooLong,
+  usernameKey,
+  usernameTooLong,
+} from "./rules";
 
 /** A session lasts this long after the Member's latest request. */
 export const SESSION_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
@@ -24,6 +33,11 @@ export type CreateLoginResult =
   | { ok: true; sessionToken: string }
   | { ok: false; reason: "link-unusable" | "username-taken" };
 
+export type ChangePasswordResult =
+  | { ok: true }
+  | { ok: false; reason: "limited" | "wrong-current" }
+  | { ok: false; reason: "new-password"; message: string };
+
 // Run against unknown usernames so a login attempt costs the same PBKDF2 work
 // whether or not the username exists.
 const DUMMY_HASH = { hash: "0".repeat(64), salt: "0".repeat(32) };
@@ -34,9 +48,17 @@ const DUMMY_HASH = { hash: "0".repeat(64), salt: "0".repeat(32) };
  */
 export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
   const db = env.DB;
+  const limits = createLoginLimits({ db, clock });
 
   function sessionExpiry(now: Date): string {
     return new Date(now.getTime() + SESSION_LIFETIME_MS).toISOString();
+  }
+
+  /** Ends every session of a Member except the one with this token. */
+  async function endOtherSessionsStatement(memberId: number, keepToken: string): Promise<D1PreparedStatement> {
+    return db
+      .prepare("DELETE FROM sessions WHERE member_id = ?1 AND token_hash != ?2")
+      .bind(memberId, await hashToken(keepToken));
   }
 
   return {
@@ -101,42 +123,109 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     },
 
     /**
-     * Checks a username in any casing and a password. Returns a new session
-     * token, or null without saying which part was wrong. A password longer
-     * than any login can have is refused before any lookup or PBKDF2 work.
+     * Checks a username in any casing and a password, within the login limits
+     * for the username and the client IP. Returns a new session token, or null
+     * without saying which part was wrong or whether a limit refused it. A
+     * refused attempt, or a username or password longer than any login can
+     * have, costs no lookup or PBKDF2 work; an over-long username records an
+     * IP failure only, so no stored key is longer than a username. A
+     * successful login clears the username's failures.
      */
-    async logIn(username: string, typedPassword: string): Promise<string | null> {
+    async logIn(username: string, typedPassword: string, ip: string): Promise<string | null> {
+      const key = usernameKey(username);
+      if (!(await limits.admit(key, ip))) return null;
+      if (usernameTooLong(normaliseUsername(username))) {
+        await limits.recordIpFailure(ip);
+        return null;
+      }
+
       const password = normalisePassword(typedPassword);
-      if (passwordTooLong(password)) return null;
+      if (passwordTooLong(password)) {
+        await limits.recordFailure(key, ip);
+        return null;
+      }
 
       const row = await db
         .prepare(
           "SELECT id, password_hash, password_salt, password_iterations FROM members WHERE username_lower = ?1",
         )
-        .bind(usernameKey(username))
+        .bind(key)
         .first<{ id: number; password_hash: string; password_salt: string; password_iterations: number }>();
 
-      if (!row) {
-        await verifyPassword(password, {
-          ...DUMMY_HASH,
-          iterations: iterationsFromEnv(env.PBKDF2_ITERATIONS),
-        });
+      const matches = await verifyPassword(
+        password,
+        row
+          ? { hash: row.password_hash, salt: row.password_salt, iterations: row.password_iterations }
+          : { ...DUMMY_HASH, iterations: iterationsFromEnv(env.PBKDF2_ITERATIONS) },
+      );
+      if (!row || !matches) {
+        await limits.recordFailure(key, ip);
         return null;
       }
-      const matches = await verifyPassword(password, {
-        hash: row.password_hash,
-        salt: row.password_salt,
-        iterations: row.password_iterations,
-      });
-      if (!matches) return null;
 
       const now = clock.now();
       const sessionToken = randomToken();
-      await db
-        .prepare("INSERT INTO sessions (token_hash, member_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)")
-        .bind(await hashToken(sessionToken), row.id, sessionExpiry(now), now.toISOString())
-        .run();
+      await db.batch([
+        db
+          .prepare("INSERT INTO sessions (token_hash, member_id, expires_at, created_at) VALUES (?1, ?2, ?3, ?4)")
+          .bind(await hashToken(sessionToken), row.id, sessionExpiry(now), now.toISOString()),
+        limits.clearUsername(key),
+      ]);
       return sessionToken;
+    },
+
+    /**
+     * Changes a Member's password after checking the current one, within the
+     * same login limits as logging in: a wrong current password counts as a
+     * failed login, and a locked username or limited IP is refused. On success
+     * the new hash is stored, the username's failures are cleared and every
+     * other session of the Member ends, in one D1 batch; the session with
+     * `keepToken` stays.
+     */
+    async changePassword(
+      member: CurrentMember,
+      keepToken: string,
+      typedCurrent: string,
+      typedNew: string,
+      ip: string,
+    ): Promise<ChangePasswordResult> {
+      const key = usernameKey(member.username);
+      if (!(await limits.admit(key, ip))) return { ok: false, reason: "limited" };
+
+      const current = normalisePassword(typedCurrent);
+      const row = passwordTooLong(current)
+        ? null
+        : await db
+            .prepare("SELECT password_hash, password_salt, password_iterations FROM members WHERE id = ?1")
+            .bind(member.id)
+            .first<{ password_hash: string; password_salt: string; password_iterations: number }>();
+      const matches =
+        row !== null &&
+        (await verifyPassword(current, {
+          hash: row.password_hash,
+          salt: row.password_salt,
+          iterations: row.password_iterations,
+        }));
+      if (!matches) {
+        await limits.recordFailure(key, ip);
+        return { ok: false, reason: "wrong-current" };
+      }
+
+      const next = normalisePassword(typedNew);
+      const problem = passwordError(next, member.username);
+      if (problem) return { ok: false, reason: "new-password", message: problem };
+
+      const hashed = await hashPassword(next, iterationsFromEnv(env.PBKDF2_ITERATIONS));
+      await db.batch([
+        db
+          .prepare(
+            "UPDATE members SET password_hash = ?1, password_salt = ?2, password_iterations = ?3 WHERE id = ?4",
+          )
+          .bind(hashed.hash, hashed.salt, hashed.iterations, member.id),
+        limits.clearUsername(key),
+        await endOtherSessionsStatement(member.id, keepToken),
+      ]);
+      return { ok: true };
     },
 
     /**
@@ -163,6 +252,11 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     /** Ends one session: Log out on this device. */
     async endSession(token: string): Promise<void> {
       await db.prepare("DELETE FROM sessions WHERE token_hash = ?1").bind(await hashToken(token)).run();
+    },
+
+    /** Ends every session of a Member except this one: log out all other devices. */
+    async endOtherSessions(memberId: number, keepToken: string): Promise<void> {
+      await (await endOtherSessionsStatement(memberId, keepToken)).run();
     },
 
     /** Ends every session of a Member: Log out everywhere. */
