@@ -25,6 +25,9 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `app/` | React Router app: `root.tsx`, `routes.ts`, and route modules in `app/routes/` |
 | `app/services.ts` | The Clock and Push sender interfaces and their production versions |
 | `app/auth/` | Auth: passwords, sessions, Setup Links, username and password rules, the avatar palette, the `Origin` check |
+| `app/game-night.ts` | `gameNightOf()`: the Game Night of an instant, the UTC+4 date of the most recent 06:00 UTC+4 |
+| `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule) and Check-ins (Availability, Note, the Game On step, tonight's Boards) |
+| `app/text-rules.ts` | The one counting rule for usernames, Group names and Notes: trimmed, NFC, code points, no invisible characters |
 | `migrations/` | Numbered D1 migrations. Add new files only; never edit or drop an applied one |
 | `test/` | Tests and the test harness |
 | `scripts/operator-setup.sh` | One-time Operator setup wizard |
@@ -139,6 +142,9 @@ returns the Worker's handlers, and the default export is
 the execution context into React Router's context under `appContext`, so a
 loader or action reads them with `context.get(appContext)`. The `scheduled`
 handler receives the same services directly.
+
+Every Game Night comes from `gameNightOf(clock.now())`, so moving the test
+clock across 02:00 UTC (06:00 UTC+4) starts a new night.
 
 Tests build the Worker through `startApp()` in `test/harness.ts`:
 
