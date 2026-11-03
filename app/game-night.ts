@@ -27,3 +27,39 @@ export function zoneDayTime(instant: Date): string {
   const minutes = String(local.getUTCMinutes()).padStart(2, "0");
   return `${local.getUTCDate()} ${MONTHS[local.getUTCMonth()]}, ${hours}:${minutes}`;
 }
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** The UTC instant of midnight at the start of a `YYYY-MM-DD` date. */
+function dateStart(night: string): number {
+  return Date.parse(`${night}T00:00:00.000Z`);
+}
+
+/** The Game Night `days` after `night` (or before, when negative), as `YYYY-MM-DD`. */
+export function addNights(night: string, days: number): string {
+  return new Date(dateStart(night) + days * DAY_MS).toISOString().slice(0, 10);
+}
+
+/**
+ * The instant a Game Night ends: 06:00 UTC+4 on the next day, which is the
+ * Reset that freezes it. Compare it as `toISOString()` text with the stored
+ * `created_at` and `joined_at` times, which have the same format.
+ */
+export function nightEnd(night: string): Date {
+  return new Date(dateStart(night) + DAY_MS + NIGHT_STARTS_AT_MS - UTC_PLUS_4_MS);
+}
+
+/** Whether a string names a real Game Night: a valid `YYYY-MM-DD` date. */
+export function isGameNight(value: string): boolean {
+  if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}$/.test(value)) return false;
+  const start = dateStart(value);
+  return !Number.isNaN(start) && new Date(start).toISOString().slice(0, 10) === value;
+}
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+/** A Game Night as History shows it: the weekday, day and month, such as "Sun 1 Nov". */
+export function nightLabel(night: string): string {
+  const start = new Date(dateStart(night));
+  return `${WEEKDAYS[start.getUTCDay()]} ${start.getUTCDate()} ${MONTHS[start.getUTCMonth()]}`;
+}
