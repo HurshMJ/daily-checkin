@@ -100,25 +100,39 @@ export type SetNoteResult = { ok: true } | { ok: false; error: string };
 export const ANSWER_FIRST_MESSAGE = "Answer Yes, Maybe or No before adding a Note.";
 
 /**
- * The one Game On statement: marks every Group of the Member that has at
- * least its threshold of Yes answers on the Game Night as Game On. Run it in
- * the same D1 batch as any change that can raise a Group's Yes count: a
- * Check-in change, or the Member joining a Group. Nothing ever clears the
- * mark within the night, which is how Game Off is told apart.
+ * The one Game On rule: marks each Group `g` that the `source` clause selects
+ * as Game On on the Game Night `?2` when its current Members have at least its
+ * threshold of Yes answers. `source` binds `?1` and must alias the Group `g`.
+ * Nothing ever clears the mark within the night, which is how Game Off is
+ * told apart.
+ */
+function gameOnSql(source: string): string {
+  return `INSERT INTO group_night_state (group_id, game_night, was_on)
+     SELECT g.id, ?2, 1
+     ${source}
+       AND (SELECT COUNT(*) FROM memberships m
+            JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
+            WHERE m.group_id = g.id) >= g.threshold
+     ON CONFLICT (group_id, game_night) DO UPDATE SET was_on = 1`;
+}
+
+/**
+ * The Game On statement for every Group of the Member. Run it in the same D1
+ * batch as any change that can raise those Groups' Yes counts: a Check-in
+ * change, or the Member joining a Group.
  */
 export function gameOnStatement(db: D1Database, memberId: number, night: string): D1PreparedStatement {
   return db
-    .prepare(
-      `INSERT INTO group_night_state (group_id, game_night, was_on)
-       SELECT g.id, ?2, 1
-       FROM memberships mine JOIN groups g ON g.id = mine.group_id
-       WHERE mine.member_id = ?1
-         AND (SELECT COUNT(*) FROM memberships m
-              JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
-              WHERE m.group_id = g.id) >= g.threshold
-       ON CONFLICT (group_id, game_night) DO UPDATE SET was_on = 1`,
-    )
+    .prepare(gameOnSql("FROM memberships mine JOIN groups g ON g.id = mine.group_id WHERE mine.member_id = ?1"))
     .bind(memberId, night);
+}
+
+/**
+ * The Game On statement for one Group. Run it in the same D1 batch as any
+ * change to the Group's threshold or Members.
+ */
+export function groupGameOnStatement(db: D1Database, groupId: number, night: string): D1PreparedStatement {
+  return db.prepare(gameOnSql("FROM groups g WHERE g.id = ?1")).bind(groupId, night);
 }
 
 /** Check-ins and tonight's Boards, on D1 and the injected clock. */

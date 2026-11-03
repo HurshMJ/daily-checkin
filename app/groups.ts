@@ -1,4 +1,6 @@
 import type { AvatarColour } from "~/auth/palette";
+import { groupGameOnStatement } from "~/checkins";
+import { gameNightOf } from "~/game-night";
 import type { Clock } from "~/services";
 import { codePoints, hasInvisible, INVISIBLE_MESSAGE, normaliseText } from "~/text-rules";
 
@@ -24,6 +26,23 @@ export function groupNameError(name: string): string | null {
   return null;
 }
 
+/** The Game On Threshold's range: whole numbers of Yes answers. */
+export const MIN_THRESHOLD = 1;
+export const MAX_THRESHOLD = 99;
+
+const THRESHOLD_MESSAGE = `Use a whole number from ${MIN_THRESHOLD} to ${MAX_THRESHOLD}.`;
+
+/**
+ * Returns an error message for a submitted threshold, or null when it is a
+ * whole number from 1 to 99 written plainly: digits only, no sign, no leading
+ * zero, no spaces.
+ */
+export function thresholdError(raw: string): string | null {
+  if (!/^[1-9][0-9]*$/.test(raw)) return THRESHOLD_MESSAGE;
+  const value = Number(raw);
+  return value >= MIN_THRESHOLD && value <= MAX_THRESHOLD ? null : THRESHOLD_MESSAGE;
+}
+
 /** A Group as its Members see it on the Group page. */
 export interface GroupView {
   id: number;
@@ -36,9 +55,49 @@ export interface GroupView {
 
 export type CreateGroupResult = { ok: true; groupId: number } | { ok: false; error: string; name: string };
 
+/**
+ * The result of an Owner's change to a Group. A Member who is not the Owner
+ * gets not-owner, anyone outside the Group not-member; invalid carries the
+ * message to show.
+ */
+export type GroupChangeResult =
+  | { ok: true }
+  | { ok: false; reason: "not-owner" | "not-member" }
+  | { ok: false; reason: "invalid"; error: string };
+
+/** Leaving: `deleted` says the Owner was the last Member, so the Group went with them. */
+export type LeaveResult = { ok: true; deleted: boolean } | { ok: false; reason: "not-member" | "owner-must-hand-over" };
+
+export const NOT_IN_GROUP_MESSAGE = "That person is not in this Group.";
+export const OWNER_STAYS_MESSAGE = "The Owner cannot be removed. Make another Member Owner first.";
+export const HAND_OVER_TO_OTHER_MESSAGE = "Choose another Member of the Group.";
+
 /** Groups and their Members, on D1 and the injected clock. */
 export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
   const db = env.DB;
+
+  /** Where the Member stands in the Group: read only to explain a write that changed nothing. */
+  async function standing(memberId: number, groupId: number): Promise<"owner" | "member" | "outsider"> {
+    const row = await db
+      .prepare(
+        `SELECT g.owner_id FROM groups g JOIN memberships m ON m.group_id = g.id AND m.member_id = ?2
+         WHERE g.id = ?1`,
+      )
+      .bind(groupId, memberId)
+      .first<{ owner_id: number }>();
+    if (!row) return "outsider";
+    return row.owner_id === memberId ? "owner" : "member";
+  }
+
+  /** Why an Owner-only write changed nothing; `asOwner` explains it when the caller is the Owner. */
+  async function refusal(memberId: number, groupId: number, asOwner: string): Promise<GroupChangeResult> {
+    const stands = await standing(memberId, groupId);
+    if (stands === "outsider") return { ok: false, reason: "not-member" };
+    if (stands === "member") return { ok: false, reason: "not-owner" };
+    return { ok: false, reason: "invalid", error: asOwner };
+  }
+
+  const night = () => gameNightOf(clock.now());
 
   return {
     /**
@@ -90,6 +149,111 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
         ownerId: row.owner_id,
         members: members.results as GroupView["members"],
       };
+    },
+
+    /** Renames the Group, only for its current Owner, with the same rule as a new Group's name. */
+    async rename(ownerId: number, groupId: number, rawName: string): Promise<GroupChangeResult> {
+      const name = normaliseGroupName(rawName);
+      const error = groupNameError(name);
+      if (error) return { ok: false, reason: "invalid", error };
+      const result = await db
+        .prepare("UPDATE groups SET name = ?1 WHERE id = ?2 AND owner_id = ?3")
+        .bind(name, groupId, ownerId)
+        .run();
+      return result.meta.changes === 1 ? { ok: true } : refusal(ownerId, groupId, NOT_IN_GROUP_MESSAGE);
+    },
+
+    /**
+     * Sets the Game On Threshold, only for the current Owner. In the same
+     * batch the Group is marked Game On for tonight if its Yes count now
+     * reaches the new threshold; a raised threshold never clears the mark,
+     * so the Board reads Game Off.
+     */
+    async setThreshold(ownerId: number, groupId: number, raw: string): Promise<GroupChangeResult> {
+      const error = thresholdError(raw);
+      if (error) return { ok: false, reason: "invalid", error };
+      const [updated] = await db.batch([
+        db.prepare("UPDATE groups SET threshold = ?1 WHERE id = ?2 AND owner_id = ?3").bind(Number(raw), groupId, ownerId),
+        groupGameOnStatement(db, groupId, night()),
+      ]);
+      return updated.meta.changes === 1 ? { ok: true } : refusal(ownerId, groupId, NOT_IN_GROUP_MESSAGE);
+    },
+
+    /**
+     * Makes another current Member the Owner (Make Owner). The owner check
+     * and the target's membership are part of the one UPDATE, so a racing
+     * change cannot slip a handover through. Pending Invites are untouched.
+     */
+    async handOver(ownerId: number, groupId: number, toMemberId: number): Promise<GroupChangeResult> {
+      const result = await db
+        .prepare(
+          `UPDATE groups SET owner_id = ?3 WHERE id = ?1 AND owner_id = ?2 AND ?3 <> ?2
+           AND EXISTS (SELECT 1 FROM memberships WHERE group_id = ?1 AND member_id = ?3)`,
+        )
+        .bind(groupId, ownerId, toMemberId)
+        .run();
+      return result.meta.changes === 1 ? { ok: true } : refusal(ownerId, groupId, HAND_OVER_TO_OTHER_MESSAGE);
+    },
+
+    /**
+     * Removes a Member other than the Owner, only for the current Owner. The
+     * Member's Check-ins stay; they stop counting for this Group at once.
+     */
+    async remove(ownerId: number, groupId: number, memberId: number): Promise<GroupChangeResult> {
+      const [removed] = await db.batch([
+        db
+          .prepare(
+            `DELETE FROM memberships WHERE group_id = ?1 AND member_id = ?2 AND member_id <> ?3
+             AND EXISTS (SELECT 1 FROM groups WHERE id = ?1 AND owner_id = ?3)`,
+          )
+          .bind(groupId, memberId, ownerId),
+        groupGameOnStatement(db, groupId, night()),
+      ]);
+      if (removed.meta.changes === 1) return { ok: true };
+      return refusal(ownerId, groupId, memberId === ownerId ? OWNER_STAYS_MESSAGE : NOT_IN_GROUP_MESSAGE);
+    },
+
+    /**
+     * The Member leaves the Group. The Owner cannot leave while other Members
+     * remain; an Owner who is the last Member deletes the Group by leaving.
+     * Both cases are one batch, each write guarding itself. The Group delete
+     * is read through RETURNING, since D1 counts cascaded rows in changes.
+     */
+    async leave(memberId: number, groupId: number): Promise<LeaveResult> {
+      const [left, deleted] = await db.batch([
+        db
+          .prepare(
+            `DELETE FROM memberships WHERE group_id = ?1 AND member_id = ?2
+             AND EXISTS (SELECT 1 FROM groups WHERE id = ?1 AND owner_id <> ?2)`,
+          )
+          .bind(groupId, memberId),
+        db
+          .prepare(
+            `DELETE FROM groups WHERE id = ?1 AND owner_id = ?2
+             AND NOT EXISTS (SELECT 1 FROM memberships WHERE group_id = ?1 AND member_id <> ?2)
+             RETURNING id`,
+          )
+          .bind(groupId, memberId),
+        groupGameOnStatement(db, groupId, night()),
+      ]);
+      if (left.meta.changes === 1) return { ok: true, deleted: false };
+      if (deleted.results.length === 1) return { ok: true, deleted: true };
+      const stands = await standing(memberId, groupId);
+      return { ok: false, reason: stands === "owner" ? "owner-must-hand-over" : "not-member" };
+    },
+
+    /**
+     * Deletes the Group for everyone, only for its current Owner. D1 removes
+     * its memberships, Invites and night state by ON DELETE CASCADE; the
+     * Members' Check-ins stay, since they belong to the Members.
+     */
+    async deleteGroup(ownerId: number, groupId: number): Promise<GroupChangeResult> {
+      // RETURNING, not meta.changes: D1 counts the cascaded rows in changes.
+      const deleted = await db
+        .prepare("DELETE FROM groups WHERE id = ?1 AND owner_id = ?2 RETURNING id")
+        .bind(groupId, ownerId)
+        .run();
+      return deleted.results.length === 1 ? { ok: true } : refusal(ownerId, groupId, NOT_IN_GROUP_MESSAGE);
     },
   };
 }
