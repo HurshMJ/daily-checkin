@@ -777,3 +777,132 @@ input {
   color: var(--text-secondary);
   font-size: var(--size-secondary);
 }
+
+/* Each Board's links, below its rows. */
+.board-links {
+  display: flex;
+  gap: 1rem;
+  font-weight: 700;
+}
+
+/* Group page: the name, the Member count below, then the cards. */
+.group-header {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.group-count {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
+
+.group-basics {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 0.5rem 1rem;
+  margin: 0;
+}
+
+.group-basics dt {
+  color: var(--text-secondary);
+}
+
+.group-basics dd {
+  margin: 0;
+  font-weight: 700;
+}
+
+/* List tiles: one row per item on a row-colour tile, a dot or nothing on
+   the left, a bold name with a secondary line, and a tag or a small button
+   on the right. */
+.list {
+  display: grid;
+  gap: 0.375rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.list-tile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: var(--control-height);
+  padding: 0.5rem 0.5rem 0.5rem 1rem;
+  border-radius: var(--radius-row);
+  background: var(--row);
+}
+
+.list-tile-text {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.list-tile-name {
+  font-weight: 700;
+}
+
+.list-tile-detail {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
+
+.list-tile-tag {
+  padding: 0.125rem 0.625rem;
+  border: var(--border-width) solid var(--accent);
+  border-radius: var(--radius-pill);
+  color: var(--accent);
+  font-size: var(--size-secondary);
+  font-weight: 700;
+}
+
+/* Small button: a compact secondary pill beside a field or in a list tile. */
+.btn-small {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: var(--control-height-small);
+  padding: 0 1rem;
+  border: var(--border-width) solid var(--control-border);
+  border-radius: var(--radius-pill);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: var(--size-secondary);
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-small:active {
+  background: var(--secondary-pressed);
+}
+
+.btn-small[aria-busy="true"] {
+  cursor: progress;
+}
+
+/* Copy box: the new Invite link in a dashed box, a read-only field with a
+   small Copy button, and a status line that announces the copy. */
+.copy-box {
+  display: grid;
+  gap: 0.375rem;
+  padding: 1rem;
+  border: var(--border-width) dashed var(--accent);
+  border-radius: var(--radius-row);
+}
+
+.copy-box-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.copy-box-status {
+  color: var(--yes);
+  font-size: var(--size-secondary);
+  font-weight: 700;
+}
