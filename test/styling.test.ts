@@ -171,7 +171,7 @@ describe("styled Tonight and profile", () => {
     expect(linksTo(body, "/profile")).toEqual([]);
   });
 
-  it("heads the profile with the large dot, the name and @username, then a Sessions card", async () => {
+  it("heads the profile with the large dot, the name and @username, then the cards with Sessions", async () => {
     const browser = await newMember();
     const html = await (await browser.get("/profile")).text();
     const body = bodyOf(html).replaceAll("<!-- -->", "");
@@ -182,7 +182,7 @@ describe("styled Tonight and profile", () => {
     expect(body).toMatch(/<h1[^>]*>Alice<\/h1><p class="profile-username">@Alice<\/p>/);
     expect(body).not.toContain("Logged in as");
 
-    const card = body.match(/<section class="card"[^>]*>([\s\S]*?)<\/section>/);
+    const card = body.match(/<section class="card" aria-labelledby="sessions-heading">([\s\S]*?)<\/section>/);
     expect(card, "Sessions card").not.toBeNull();
     expect(card![1]).toMatch(/^<h2[^>]*>Sessions<\/h2>/);
     expect(card![1]).toMatch(

@@ -1,7 +1,7 @@
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
-import { startApp } from "./harness";
+import { APP_ORIGIN, startApp } from "./harness";
 
 const SESSION_COOKIE = "__Host-session";
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -185,6 +185,52 @@ describe("Logging in", () => {
     expect(cookie).toContain("SameSite=Lax");
     expect(cookie).toContain("Path=/");
     expect(cookie).toContain(`Max-Age=${90 * 24 * 60 * 60}`);
+  });
+});
+
+describe("Login limits", () => {
+  const MESSAGE = "That username and password do not match.";
+  const ATTACKER = "198.51.100.7";
+
+  /** POSTs the login form as a browser behind `ip` would, or with no CF-Connecting-IP when null. */
+  function postLogin(app: ReturnType<typeof startApp>, form: Record<string, string>, ip: string | null) {
+    const headers = new Headers({ Origin: APP_ORIGIN });
+    if (ip !== null) headers.set("CF-Connecting-IP", ip);
+    return app.fetch("/login", { method: "POST", headers, body: new URLSearchParams(form) });
+  }
+
+  async function expectRefused(response: Response) {
+    expect(response.status).toBe(401);
+    expect(await response.text()).toContain(MESSAGE);
+  }
+
+  it("answers a locked username, a limited IP, an unknown username and a wrong password alike", async () => {
+    const app = startApp();
+    await app.createLogin(alice);
+
+    await expectRefused(await postLogin(app, { username: "Alice", password: "not the password" }, ATTACKER));
+    await expectRefused(await postLogin(app, { username: "Nobody", password: alice.password }, ATTACKER));
+    for (let i = 0; i < 4; i++) await postLogin(app, { username: "Alice", password: "not the password" }, ATTACKER);
+    // Alice is locked now, so the correct password is refused from any IP.
+    await expectRefused(await postLogin(app, alice, "203.0.113.9"));
+    for (let i = 0; i < 14; i++) await postLogin(app, { username: `guess ${i}`, password: "x" }, ATTACKER);
+    // The attacker IP has 20 failures: even another Member's correct password is refused.
+    await app.createLogin({ username: "Bob", password: "battery staple horse" });
+    await expectRefused(await postLogin(app, { username: "Bob", password: "battery staple horse" }, ATTACKER));
+    expect((await postLogin(app, { username: "Bob", password: "battery staple horse" }, "203.0.113.9")).status).toBe(302);
+  });
+
+  it("limits two IPs independently and a request with no CF-Connecting-IP under 'unknown'", async () => {
+    const app = startApp();
+    await app.createLogin(alice);
+    for (let i = 0; i < 20; i++) await postLogin(app, { username: `guess ${i}`, password: "x" }, null);
+
+    await expectRefused(await postLogin(app, alice, null));
+    expect((await postLogin(app, alice, ATTACKER)).status).toBe(302);
+    const { results } = await env.DB.prepare(
+      "SELECT DISTINCT key FROM login_failures WHERE kind = 'ip'",
+    ).all<{ key: string }>();
+    expect(results).toEqual([{ key: "unknown" }]);
   });
 });
 
