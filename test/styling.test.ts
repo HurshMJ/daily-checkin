@@ -296,3 +296,31 @@ describe("styled Group page", () => {
     }
   });
 });
+
+describe("styled Group settings and the profile Groups card", () => {
+  it("draws the stepper, Manage and the tile action from tokens only, with no inline styles", async () => {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    await alice.post("/groups/new", { name: "Friday" });
+    const group = await env.DB.prepare("SELECT id FROM groups").first<{ id: number }>();
+    const page = bodyOf(await (await alice.get(`/groups/${group!.id}`)).text());
+    const profile = bodyOf(await (await alice.get("/profile")).text());
+    expect(page).not.toMatch(/\sstyle=/);
+    expect(profile).not.toMatch(/\sstyle=/);
+    expect(page).toContain('<form class="stepper"');
+    expect(profile).toContain('<form class="list-tile-action"');
+
+    for (const selector of [".stepper", ".stepper-btn", ".stepper-value", ".manage", ".manage-actions", ".list-tile-action"]) {
+      const declarations = ruleOf(selector);
+      expect(declarations, selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+      for (const [, value] of declarations.matchAll(/(?:^|;)\s*(?:color|background|border(?:-[a-z-]+)?)\s*:\s*([^;]+)/g)) {
+        if (/^(transparent|none|0)$/.test(value.trim())) continue;
+        expect(value, selector).toMatch(/var\(--/);
+      }
+    }
+    // Round buttons the height of every other control, outlined like secondary controls.
+    expect(ruleOf(".stepper-btn")).toMatch(/width: var\(--control-height\);\s*height: var\(--control-height\);/);
+    expect(ruleOf(".stepper-btn")).toMatch(/border-radius: var\(--radius-pill\)/);
+    expect(ruleOf(".stepper-btn")).toMatch(/border: var\(--border-width\) solid var\(--control-border\)/);
+  });
+});

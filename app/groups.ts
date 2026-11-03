@@ -53,6 +53,14 @@ export interface GroupView {
   members: { id: number; username: string; colour: AvatarColour }[];
 }
 
+/** One of the Member's Groups as the profile lists it, for leaving. */
+export interface MembershipView {
+  groupId: number;
+  name: string;
+  isOwner: boolean;
+  memberCount: number;
+}
+
 export type CreateGroupResult = { ok: true; groupId: number } | { ok: false; error: string; name: string };
 
 /**
@@ -149,6 +157,26 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
         ownerId: row.owner_id,
         members: members.results as GroupView["members"],
       };
+    },
+
+    /** Every Group the Member is in, in the order they joined, with its Member count. */
+    async membershipsFor(memberId: number): Promise<MembershipView[]> {
+      const { results } = await db
+        .prepare(
+          `SELECT g.id, g.name, g.owner_id = ?1 AS is_owner,
+                  (SELECT COUNT(*) FROM memberships m WHERE m.group_id = g.id) AS member_count
+           FROM memberships mine JOIN groups g ON g.id = mine.group_id
+           WHERE mine.member_id = ?1
+           ORDER BY mine.joined_at, g.id`,
+        )
+        .bind(memberId)
+        .all<{ id: number; name: string; is_owner: number; member_count: number }>();
+      return results.map((row) => ({
+        groupId: row.id,
+        name: row.name,
+        isOwner: row.is_owner === 1,
+        memberCount: row.member_count,
+      }));
     },
 
     /** Renames the Group, only for its current Owner, with the same rule as a new Group's name. */

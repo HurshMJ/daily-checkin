@@ -65,15 +65,17 @@ describe("the Group page", () => {
     expect(html).not.toMatch(/\sstyle=/);
     expect(bodyOf(html)).toMatch(/<a class="top-bar-back" href="\/"[^>]*><span aria-hidden="true">‹<\/span> Tonight<\/a>/);
     expect(main).toContain("<h1>Friday</h1><p class=\"group-count\">2 Members</p>");
-    expect(main).toContain("<dt>Name</dt><dd>Friday</dd>");
-    expect(main).toContain("<dd>Game On at 3 Yes</dd>");
+    expect(main).toMatch(/<input[^>]*id="group-name"[^>]*value="Friday"/);
+    expect(main).toContain('<p class="stepper-value" role="status">3 Yes</p>');
 
     const tiles = [...main.matchAll(/<li class="list-tile">([\s\S]*?)<\/li>/g)].map(([, tile]) => tile);
     expect(tiles[0]).toContain('data-colour="violet"');
     expect(tiles[0]).toContain('<span class="list-tile-name">Alice</span><span class="list-tile-detail">@Alice</span>');
     expect(tiles[0]).toContain('<span class="list-tile-tag">Owner</span>');
-    expect(tiles[1]).toContain('<span class="list-tile-name">Bob</span>');
-    expect(tiles[1]).not.toContain("Owner");
+    expect(tiles[0]).not.toContain("Manage");
+    expect(tiles[1]).toMatch(/<span class="list-tile-name" id="member-\d+-name">Bob<\/span>/);
+    expect(tiles[1]).not.toContain("list-tile-tag");
+    expect(tiles[1]).toContain(">Manage</summary>");
 
     expect(main).toContain('<h2 id="invites-heading">Invites</h2>');
     expect(main).toMatch(/<label[^>]*for="invite-label"[^>]*>Who is it for\?<\/label>/);
@@ -208,5 +210,181 @@ describe("Board links", () => {
       [`/groups/${friday}`, friday],
       [`/groups/${sunday}`, sunday],
     ]);
+  });
+});
+
+async function groupRow(groupId: number) {
+  return env.DB.prepare("SELECT name, threshold, owner_id FROM groups WHERE id = ?1").bind(groupId).first<{
+    name: string;
+    threshold: number;
+    owner_id: number;
+  }>();
+}
+
+async function membersOf(groupId: number): Promise<number> {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM memberships WHERE group_id = ?1").bind(groupId).first<{ n: number }>();
+  return row!.n;
+}
+
+describe("Owner settings on the Group page", () => {
+  it("gives the Owner the Basics, Members, Invites and Owner actions cards, in that order", async () => {
+    const { alice, page } = await setUp();
+    const main = mainOf(await (await alice.get(page)).text());
+    const headings = [...main.matchAll(/<h2 id="[^"]*">([^<]*)<\/h2>/g)].map(([, text]) => text);
+    expect(headings).toEqual(["Basics", "Members", "Invites", "Owner actions"]);
+    expect(main).toMatch(/<button[^>]*class="btn-destructive"[^>]*>Delete Group<\/button>/);
+    const stepper = main.match(/<form class="stepper"[\s\S]*?<\/form>/)![0];
+    expect(stepper).toContain('<input type="hidden" name="intent" value="threshold"/>');
+    expect(stepper).toMatch(/<button value="2" aria-label="Lower the threshold to 2 Yes" type="submit" class="stepper-btn" name="threshold">−<\/button>/);
+    expect(stepper).toContain('<p class="stepper-value" role="status">3 Yes</p>');
+    expect(stepper).toMatch(/<button value="4" aria-label="Raise the threshold to 4 Yes" type="submit" class="stepper-btn" name="threshold">\+<\/button>/);
+  });
+
+  it("shows a non-Owner no form, no Manage and no Owner actions", async () => {
+    const { bob, page } = await setUp();
+    const main = mainOf(await (await bob.get(page)).text());
+    expect(main).not.toContain("<form");
+    expect(main).not.toContain("Manage");
+    expect(main).not.toContain("Owner actions");
+    expect(main).not.toContain("stepper");
+  });
+
+  it("disables − at 1 and + at 99", async () => {
+    const { alice, friday, page } = await setUp();
+    await alice.post(page, { intent: "threshold", threshold: "1" });
+    let main = mainOf(await (await alice.get(page)).text());
+    expect(main).toMatch(/<button[^>]*value="0"[^>]*disabled=""[^>]*>−<\/button>/);
+    expect(main).not.toMatch(/<button[^>]*value="2"[^>]*disabled=""/);
+
+    await alice.post(page, { intent: "threshold", threshold: "99" });
+    main = mainOf(await (await alice.get(page)).text());
+    expect(main).toMatch(/<button[^>]*value="100"[^>]*disabled=""[^>]*>\+<\/button>/);
+    expect((await groupRow(friday))?.threshold).toBe(99);
+  });
+
+  it("renames the Group and shows a bad name's error with the typed value kept", async () => {
+    const { alice, friday, page } = await setUp();
+    const renamed = await alice.post(page, { intent: "rename", name: " Saturday 🎲 " });
+    expect(renamed.status).toBe(303);
+    expect(renamed.headers.get("Location")).toBe(page);
+    expect(mainOf(await (await alice.get(page)).text())).toContain("<h1>Saturday 🎲</h1>");
+
+    const long = "x".repeat(41);
+    const refused = await alice.post(page, { intent: "rename", name: long });
+    const main = mainOf(await refused.text());
+    expect(refused.status).toBe(400);
+    const input = main.match(/<input[^>]*id="group-name"[^>]*>/)![0];
+    expect(input).toContain('aria-invalid="true"');
+    expect(input).toContain(`value="${long}"`);
+    expect(main).toContain('<p id="group-name-help" class="field-error">Error: Use 1 to 40 characters.</p>');
+    expect((await groupRow(friday))?.name).toBe("Saturday 🎲");
+  });
+
+  it("sets a typed threshold and shows a bad one's error with the typed value kept", async () => {
+    const { alice, friday, page } = await setUp();
+    expect((await alice.post(page, { intent: "threshold", typed: "yes", threshold: "5" })).status).toBe(303);
+    expect((await groupRow(friday))?.threshold).toBe(5);
+
+    const refused = await alice.post(page, { intent: "threshold", typed: "yes", threshold: "100" });
+    const main = mainOf(await refused.text());
+    expect(refused.status).toBe(400);
+    const input = main.match(/<input[^>]*id="threshold"[^>]*>/)![0];
+    expect(input).toContain('aria-invalid="true"');
+    expect(input).toContain('value="100"');
+    expect(main).toContain('<p id="threshold-help" class="field-error">Error: Use a whole number from 1 to 99.</p>');
+    expect((await groupRow(friday))?.threshold).toBe(5);
+  });
+
+  it("arms Make Owner on a first tap without the confirmation and hands over on the second", async () => {
+    const { alice, bob, friday, page } = await setUp();
+    const bobId = await idOf("members", "username", "Bob");
+    const first = await alice.post(page, { intent: "hand-over", memberId: String(bobId) });
+    const main = mainOf(await first.text());
+    expect(first.status).toBe(200);
+    expect(main).toMatch(/<details class="manage" open="">/);
+    expect(main).toMatch(/<button[^>]*data-armed="true"[^>]*>Tap again to make Bob Owner<\/button>/);
+    expect((await groupRow(friday))?.owner_id).not.toBe(bobId);
+
+    const second = await alice.post(page, { intent: "hand-over", memberId: String(bobId), confirm: "yes" });
+    expect(second.status).toBe(303);
+    expect((await groupRow(friday))?.owner_id).toBe(bobId);
+    // Alice is now an ordinary Member: read-only page, and her Owner posts are refused.
+    expect(mainOf(await (await alice.get(page)).text())).not.toContain("<form");
+    expect((await alice.post(page, { intent: "delete", confirm: "yes" })).status).toBe(403);
+    expect(mainOf(await (await bob.get(page)).text())).toContain("Owner actions");
+  });
+
+  it("removes a Member only on the confirmed tap; the removed Member loses the page", async () => {
+    const { alice, bob, friday, page } = await setUp();
+    const bobId = String(await idOf("members", "username", "Bob"));
+    const first = await alice.post(page, { intent: "remove", memberId: bobId });
+    expect(mainOf(await first.text())).toMatch(/<button[^>]*data-armed="true"[^>]*>Tap again to remove Bob<\/button>/);
+    expect(await membersOf(friday)).toBe(2);
+
+    expect((await alice.post(page, { intent: "remove", memberId: bobId, confirm: "yes" })).status).toBe(303);
+    expect(await membersOf(friday)).toBe(1);
+    expect((await bob.get(page)).status).toBe(404);
+    expect(mainOf(await (await bob.get("/")).text())).not.toContain("Friday");
+  });
+
+  it("deletes the Group only on the confirmed tap and lands on Tonight", async () => {
+    const { alice, friday, page } = await setUp();
+    const first = await alice.post(page, { intent: "delete" });
+    expect(mainOf(await first.text())).toMatch(
+      /<button[^>]*data-armed="true"[^>]*>Tap again to delete Friday for everyone<\/button>/,
+    );
+    expect(await groupRow(friday)).not.toBeNull();
+
+    const second = await alice.post(page, { intent: "delete", confirm: "yes" });
+    expect(second.status).toBe(303);
+    expect(second.headers.get("Location")).toBe("/");
+    expect(await groupRow(friday)).toBeNull();
+    expect((await alice.get(page)).status).toBe(404);
+  });
+
+  it("refuses every Owner intent from a non-Owner with 403, from an outsider with 404, and an unknown intent with 400", async () => {
+    const { alice, bob, carol, friday, page } = await setUp();
+    const aliceId = String(await idOf("members", "username", "Alice"));
+    const posts: Record<string, string>[] = [
+      { intent: "rename", name: "Mine" },
+      { intent: "threshold", threshold: "1" },
+      { intent: "hand-over", memberId: aliceId, confirm: "yes" },
+      { intent: "remove", memberId: aliceId, confirm: "yes" },
+      { intent: "delete", confirm: "yes" },
+    ];
+    for (const form of posts) {
+      expect((await bob.post(page, form)).status, form.intent).toBe(403);
+      expect((await carol.post(page, form)).status, form.intent).toBe(404);
+    }
+    expect((await alice.post(page, { intent: "archive" })).status).toBe(400);
+    expect(await groupRow(friday)).toMatchObject({ name: "Friday", threshold: 3, owner_id: Number(aliceId) });
+    expect(await membersOf(friday)).toBe(2);
+  });
+
+  it("gives each Member's Manage, Make Owner and Remove a description naming that Member", async () => {
+    const { alice, friday, page } = await setUp();
+    const carolId = await idOf("members", "username", "Carol");
+    await env.DB.prepare("INSERT INTO memberships (group_id, member_id, joined_at) VALUES (?1, ?2, '2026-11-03T12:02:00.000Z')")
+      .bind(friday, carolId)
+      .run();
+    const main = mainOf(await (await alice.get(page)).text());
+    const summaries = [...main.matchAll(/<summary class="btn-small" aria-describedby="([^"]+)">Manage<\/summary>/g)].map(
+      ([, id]) => id,
+    );
+    expect(summaries).toHaveLength(2);
+    expect(new Set(summaries).size).toBe(2);
+    for (const id of summaries) {
+      expect(main).toMatch(new RegExp(`<span class="list-tile-name" id="${id}">(Bob|Carol)</span>`));
+      expect([...main.matchAll(new RegExp(`<button[^>]*aria-describedby="${id}"[^>]*>(Make Owner|Remove)</button>`, "g"))]).toHaveLength(2);
+    }
+  });
+
+  it("updates the Tonight pill after a threshold change", async () => {
+    const { alice, bob, page } = await setUp();
+    await alice.post("/?index", { intent: "availability", availability: "yes" });
+    await bob.post("/?index", { intent: "availability", availability: "yes" });
+    expect(mainOf(await (await alice.get("/")).text())).toContain('<p class="board-pill">Needs 1 more Yes</p>');
+    await alice.post(page, { intent: "threshold", threshold: "2" });
+    expect(mainOf(await (await alice.get("/")).text())).toContain('<p class="board-pill">Game On</p>');
   });
 });

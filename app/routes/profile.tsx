@@ -1,4 +1,4 @@
-import { data, Form } from "react-router";
+import { data, Form, redirect, useNavigation } from "react-router";
 
 import { clientIp } from "~/auth/login-limits";
 import { authFor, currentSession, requireMember } from "~/auth/request";
@@ -6,8 +6,9 @@ import { AvatarDot } from "~/components/avatar-dot";
 import { FieldError } from "~/components/field-error";
 import { Notice } from "~/components/notice";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
-import { CONFIRM_FIELD, TapAgainButton } from "~/components/tap-again-button";
+import { CONFIRM_FIELD, isConfirmed, TapAgainButton } from "~/components/tap-again-button";
 import { TopBar } from "~/components/top-bar";
+import { createGroups, type MembershipView } from "~/groups";
 import { appContext } from "~/services";
 
 import type { Route } from "./+types/profile";
@@ -19,20 +20,43 @@ export function meta(_: Route.MetaArgs) {
   return [{ title: "Profile · Daily Check-in" }];
 }
 
-export function loader({ request, context }: Route.LoaderArgs) {
-  const { username, colour } = requireMember(context);
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const { id, username, colour } = requireMember(context);
+  const search = new URL(request.url).searchParams;
   // Log out everywhere sends a first tap made without JavaScript back here, armed.
-  const armLogoutEverywhere = new URL(request.url).searchParams.get(CONFIRM_FIELD) === "logout-everywhere";
-  return { username, colour, armLogoutEverywhere };
+  const armLogoutEverywhere = search.get(CONFIRM_FIELD) === "logout-everywhere";
+  const groups = await createGroups(context.get(appContext)).membershipsFor(id);
+  // Leaving a Group lands back here with the Group's name for the status line.
+  const left = search.get("left");
+  return { username, colour, armLogoutEverywhere, groups, left: left ? { name: left, deleted: search.has("deleted") } : null };
 }
 
 type PasswordErrors = Partial<Record<"currentPassword" | "newPassword", string>>;
 
-/** Change password. Typed passwords are never sent back to the page. */
+/**
+ * Change password, or leave a Group when the intent field is "leave". Typed
+ * passwords are never sent back to the page. Leaving acts only when the
+ * tap-again button confirmed it; an unconfirmed post returns the page with
+ * that Group's Leave button armed.
+ */
 export async function action({ request, context }: Route.ActionArgs) {
   const member = requireMember(context);
   const token = currentSession(context)?.token ?? "";
   const form = await request.formData();
+
+  if (form.get("intent") === "leave") {
+    const groupId = Number(form.get("groupId"));
+    if (!Number.isSafeInteger(groupId)) return refused({}, 400);
+    if (!isConfirmed(form)) return { errors: {} as PasswordErrors, changedAt: null, armedLeave: groupId };
+    const groups = createGroups(context.get(appContext));
+    const name = (await groups.membershipsFor(member.id)).find((group) => group.groupId === groupId)?.name;
+    const left = await groups.leave(member.id, groupId);
+    // A Member who is not in the Group gets 404; an Owner with other Members has no Leave button.
+    if (!left.ok) return refused({}, left.reason === "not-member" ? 404 : 409);
+    const search = new URLSearchParams({ left: name ?? "the Group" });
+    if (left.deleted) search.set("deleted", "1");
+    return redirect(`/profile?${search}`, 303);
+  }
 
   const result = await authFor(context).changePassword(
     member,
@@ -42,21 +66,28 @@ export async function action({ request, context }: Route.ActionArgs) {
     clientIp(request),
   );
   if (result.ok) {
-    return { errors: {} as PasswordErrors, changedAt: context.get(appContext).clock.now().toISOString() };
+    return {
+      errors: {} as PasswordErrors,
+      changedAt: context.get(appContext).clock.now().toISOString(),
+      armedLeave: null,
+    };
   }
-  if (result.reason === "new-password") return passwordRefused({ newPassword: result.message }, 400);
+  if (result.reason === "new-password") return refused({ newPassword: result.message }, 400);
   if (result.reason === "wrong-current") {
-    return passwordRefused({ currentPassword: "That is not your current password." }, 400);
+    return refused({ currentPassword: "That is not your current password." }, 400);
   }
-  return passwordRefused({ currentPassword: "Too many wrong passwords. Try again later." }, 429);
+  return refused({ currentPassword: "Too many wrong passwords. Try again later." }, 429);
 }
 
-function passwordRefused(errors: PasswordErrors, status: number) {
-  return data({ errors, changedAt: null }, { status });
+/** A refused post: the password errors, if any, with nothing changed. */
+function refused(errors: PasswordErrors, status: number) {
+  return data({ errors, changedAt: null, armedLeave: null }, { status });
 }
 
 export default function Profile({ loaderData, actionData }: Route.ComponentProps) {
-  const changingPassword = useSubmitting();
+  const navigation = useNavigation();
+  // The Groups card's Leave forms post here too; only the password form's own post pends it.
+  const changingPassword = useSubmitting() && navigation.formData?.get("intent") !== "leave";
   const errors: PasswordErrors = actionData?.errors ?? {};
   const loggingOut = useSubmitting(LOGOUT);
   const loggingOutEverywhere = useSubmitting(LOGOUT_EVERYWHERE);
@@ -75,7 +106,7 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
         </header>
         {/* One card per settings topic, in spec order: name and colour,
             notifications, password, Groups, sessions, delete login. Only
-            password and sessions exist so far. */}
+            password, Groups and sessions exist so far. */}
         <section className="card" aria-labelledby="password-heading">
           <h2 id="password-heading">Password</h2>
           <div role="status">
@@ -129,6 +160,11 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
             />
           </Form>
         </section>
+        <GroupsCard
+          groups={loaderData.groups}
+          left={loaderData.left}
+          armed={actionData?.armedLeave ?? null}
+        />
         <section className="card" aria-labelledby="sessions-heading">
           <h2 id="sessions-heading">Sessions</h2>
           <Form method="post" action={LOGOUT} className="card-action">
@@ -153,5 +189,76 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
         </section>
       </main>
     </>
+  );
+}
+
+/**
+ * The Member's Groups, each with Leave behind a tap-again button. An Owner
+ * with other Members has no Leave button, only the hint to hand over first;
+ * an Owner who is the last Member deletes the Group by leaving.
+ */
+function GroupsCard({
+  groups,
+  left,
+  armed,
+}: {
+  groups: MembershipView[];
+  left: { name: string; deleted: boolean } | null;
+  armed: number | null;
+}) {
+  const navigation = useNavigation();
+  const submitting = useSubmitting();
+  const leaving = submitting && navigation.formData?.get("intent") === "leave" ? navigation.formData.get("groupId") : null;
+  return (
+    <section className="card" aria-labelledby="groups-heading">
+      <h2 id="groups-heading">Groups</h2>
+      <div role="status">
+        {left ? (
+          <Notice tone="info" title={left.deleted ? `You left and deleted ${left.name}` : `You left ${left.name}`}>
+            {left.deleted ? "It was deleted for everyone." : "Its Board is off your Tonight."}
+          </Notice>
+        ) : null}
+      </div>
+      {groups.length === 0 ? (
+        <p className="card-hint">You are not in any Group.</p>
+      ) : (
+        <ul className="list">
+          {groups.map((group) => {
+            const nameId = `group-${group.groupId}-name`;
+            const others = group.memberCount - 1;
+            return (
+              <li key={group.groupId} className="list-tile">
+                <span className="list-tile-text">
+                  <span className="list-tile-name" id={nameId}>
+                    {group.name}
+                  </span>
+                  <span className="list-tile-detail">
+                    {group.isOwner ? "Owner · " : ""}
+                    {group.memberCount === 1 ? "1 Member" : `${group.memberCount} Members`}
+                  </span>
+                  {group.isOwner && others > 0 ? (
+                    <span className="list-tile-detail">Make another Member Owner first</span>
+                  ) : null}
+                </span>
+                {group.isOwner && others > 0 ? null : (
+                  <Form method="post" className="list-tile-action">
+                    <input type="hidden" name="intent" value="leave" />
+                    <input type="hidden" name="groupId" value={group.groupId} />
+                    <TapAgainButton
+                      pending={leaving === String(group.groupId)}
+                      label="Leave"
+                      confirmLabel={group.isOwner ? `Tap again to leave and delete ${group.name}` : `Tap again to leave ${group.name}`}
+                      pendingLabel="Leaving…"
+                      armed={armed === group.groupId}
+                      describedBy={nameId}
+                    />
+                  </Form>
+                )}
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </section>
   );
 }
