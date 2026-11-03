@@ -1,6 +1,7 @@
 import { createRequestHandler, RouterContextProvider } from "react-router";
 
 import { refuseCrossOrigin } from "../app/auth/request";
+import { createHistory } from "../app/history";
 import { appContext, productionServices, type Services } from "../app/services";
 
 const requestHandler = createRequestHandler(
@@ -25,9 +26,10 @@ export function createWorker(services: Services) {
       return requestHandler(request, context);
     },
 
-    async scheduled(_controller, _env, _ctx) {
-      // The hourly run has no jobs yet. Later jobs receive `services` and `env`
-      // from here, the same way requests do.
+    // The hourly run. Each job receives `services` and `env`, the same way
+    // requests do, and decides for itself whether it is due.
+    async scheduled(_controller, env, _ctx) {
+      await createHistory({ ...services, env }).reset();
     },
   } satisfies ExportedHandler<Env>;
 }

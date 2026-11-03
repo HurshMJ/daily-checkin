@@ -324,3 +324,68 @@ describe("styled Group settings and the profile Groups card", () => {
     expect(ruleOf(".stepper-btn")).toMatch(/border: var\(--border-width\) solid var\(--control-border\)/);
   });
 });
+
+describe("styled History", () => {
+  const TOKEN_ONLY = [
+    ".page-context",
+    ".board-row-left",
+    ".yes-count",
+    ".yes-count-name",
+    ".yes-count-of",
+    ".yes-count-bar",
+    ".yes-count-fill",
+    ".past-night",
+    ".past-night-count",
+    ".past-night-pill",
+    '.past-night-pill[data-state="on"]',
+    '.past-night-pill[data-state="off"]',
+    '.past-night-pill[data-state="never"]',
+    '.past-night-pill[data-state="nobody"]',
+  ];
+
+  it("draws the bar list, the tiles and the pills from tokens only", () => {
+    for (const selector of TOKEN_ONLY) {
+      const declarations = ruleOf(selector);
+      expect(declarations, selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+      for (const [, value] of declarations.matchAll(/(?:^|;)\s*(?:color|background|fill|border(?:-[a-z-]+)?)\s*:\s*([^;]+)/g)) {
+        if (/^(transparent|none|0|solid|dashed)$/.test(value.trim())) continue;
+        expect(value, selector).toMatch(/var\(--/);
+      }
+    }
+  });
+
+  it("fills Game On and Game Off pills, outlines Never on and dashes Nobody answered, as issue 42 sets out", () => {
+    expect(ruleOf('.past-night-pill[data-state="on"]')).toMatch(/background: var\(--yes\);\s*color: var\(--on-fill\);/);
+    expect(ruleOf('.past-night-pill[data-state="off"]')).toMatch(/background: var\(--no\);\s*color: var\(--on-fill\);/);
+    expect(ruleOf('.past-night-pill[data-state="never"]')).toMatch(/border-color: var\(--control-border\)/);
+    expect(ruleOf('.past-night-pill[data-state="nobody"]')).toMatch(/border-style: dashed;\s*border-color: var\(--no-answer\);/);
+  });
+
+  it("lets long names and narrow screens wrap instead of scrolling sideways", () => {
+    expect(ruleOf(".yes-count")).toMatch(/flex-wrap: wrap/);
+    expect(ruleOf(".yes-count-name")).toMatch(/min-width: 0;[\s\S]*overflow-wrap: anywhere/);
+    expect(ruleOf(".yes-count-bar")).toMatch(/flex: 1 0 100%/);
+    expect(ruleOf(".past-night")).toMatch(/flex-wrap: wrap/);
+    expect(ruleOf(".past-night")).toMatch(/min-height: var\(--past-night-height\)/);
+    expect(ruleOf(".past-night-text")).toMatch(/min-width: 0/);
+    for (const selector of [".yes-count", ".yes-count-number", ".past-night", ".past-night-pill"]) {
+      expect(ruleOf(selector), selector).not.toMatch(/white-space: nowrap|overflow-x|width: \d+px/);
+    }
+  });
+
+  it("uses no modifier classes on the History page", async () => {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    await alice.post("/groups/new", { name: "Friday" });
+    const group = await env.DB.prepare("SELECT id FROM groups").first<{ id: number }>();
+    app.clock.set("2026-11-04T02:00:00Z");
+    await app.runScheduled();
+    const body = bodyOf(await (await alice.get(`/groups/${group!.id}/history`)).text());
+
+    expect(body).not.toMatch(/\sstyle=/);
+    expect(body).toContain('class="past-night"');
+    for (const [, classes] of body.matchAll(/class="((?:yes-count|past-night|page-)[^"]*)"/g)) {
+      expect(classes.split(" "), classes).toHaveLength(1);
+    }
+  });
+});

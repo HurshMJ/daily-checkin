@@ -199,16 +199,20 @@ describe("making and cancelling Invites on the Group page", () => {
 });
 
 describe("Board links", () => {
-  it("gives each Tonight Board a Group link to its Group page", async () => {
+  it("gives each Tonight Board a Group link and a History link, described by its Group name", async () => {
     const { alice, friday } = await setUp();
     await alice.post("/groups/new", { name: "Sunday" });
     const sunday = await idOf("groups", "name", "Sunday");
     const main = mainOf(await (await alice.get("/")).text());
 
-    const links = [...main.matchAll(/<p class="board-links"><a aria-describedby="board-([0-9]+)" href="([^"]*)"[^>]*>Group<\/a><\/p>/g)];
-    expect(links.map(([, board, href]) => [href, Number(board)])).toEqual([
-      [`/groups/${friday}`, friday],
-      [`/groups/${sunday}`, sunday],
+    const links = [
+      ...main.matchAll(
+        /<p class="board-links"><a aria-describedby="board-([0-9]+)" href="([^"]*)"[^>]*>Group<\/a><a aria-describedby="board-([0-9]+)" href="([^"]*)"[^>]*>History<\/a><\/p>/g,
+      ),
+    ];
+    expect(links.map(([, board, group, historyBoard, history]) => [group, history, Number(board), Number(historyBoard)])).toEqual([
+      [`/groups/${friday}`, `/groups/${friday}/history`, friday, friday],
+      [`/groups/${sunday}`, `/groups/${sunday}/history`, sunday, sunday],
     ]);
   });
 });

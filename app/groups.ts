@@ -43,6 +43,16 @@ export function thresholdError(raw: string): string | null {
   return value >= MIN_THRESHOLD && value <= MAX_THRESHOLD ? null : THRESHOLD_MESSAGE;
 }
 
+/**
+ * A Group id from a URL: digits without a leading zero, as a safe integer,
+ * or null for anything else.
+ */
+export function parseGroupId(raw: string): number | null {
+  if (!/^[1-9][0-9]{0,15}$/.test(raw)) return null;
+  const id = Number(raw);
+  return Number.isSafeInteger(id) ? id : null;
+}
+
 /** A Group as its Members see it on the Group page. */
 export interface GroupView {
   id: number;

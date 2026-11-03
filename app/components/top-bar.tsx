@@ -6,18 +6,25 @@ import { AvatarDot } from "./avatar-dot";
 import { OfflineBar } from "./offline-bar";
 
 /**
- * The bar above every logged-in screen: "‹ Tonight" on inner pages, and the
- * "You" pill with the Member's dot linking to the profile. The profile itself
- * passes no colour, so it never links to itself. The Offline bar sits
- * directly below it.
+ * The bar above every logged-in screen: a back link on inner pages, "‹ Tonight"
+ * unless `back` names another page, and the "You" pill with the Member's dot
+ * linking to the profile. The profile itself passes no colour, so it never
+ * links to itself. The Offline bar sits directly below it.
  */
-export function TopBar({ back = false, colour }: { back?: boolean; colour?: AvatarColour }) {
+export function TopBar({
+  back = false,
+  colour,
+}: {
+  back?: boolean | { to: string; label: string };
+  colour?: AvatarColour;
+}) {
+  const target = back === true ? { to: "/", label: "Tonight" } : back || null;
   return (
     <>
       <header className="top-bar">
-        {back ? (
-          <Link to="/" className="top-bar-back">
-            <span aria-hidden="true">‹</span> Tonight
+        {target ? (
+          <Link to={target.to} className="top-bar-back">
+            <span aria-hidden="true">‹</span>{` ${target.label}`}
           </Link>
         ) : null}
         {colour ? (

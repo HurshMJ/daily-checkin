@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { gameNightOf, zoneDayTime } from "~/game-night";
+import { addNights, gameNightOf, isGameNight, nightEnd, nightLabel, zoneDayTime } from "~/game-night";
 
 describe("gameNightOf", () => {
   it.each([
@@ -30,4 +30,36 @@ describe("zoneDayTime", () => {
     expect(zoneDayTime(new Date("2026-12-31T19:59:00Z"))).toBe("31 Dec, 23:59");
     expect(zoneDayTime(new Date("2026-12-31T20:00:00Z"))).toBe("1 Jan, 00:00");
   });
+});
+
+describe("Game Night dates", () => {
+  it("ends a Game Night at 06:00 UTC+4 the next day, where the next night starts", () => {
+    expect(nightEnd("2026-11-03").toISOString()).toBe("2026-11-04T02:00:00.000Z");
+    expect(nightEnd("2026-12-31").toISOString()).toBe("2027-01-01T02:00:00.000Z");
+    expect(gameNightOf(nightEnd("2026-11-03"))).toBe("2026-11-04");
+    expect(gameNightOf(new Date(nightEnd("2026-11-03").getTime() - 1))).toBe("2026-11-03");
+  });
+
+  it("steps between nights across month and year ends", () => {
+    expect(addNights("2026-10-31", 1)).toBe("2026-11-01");
+    expect(addNights("2027-01-01", -1)).toBe("2026-12-31");
+    expect(addNights("2026-11-03", 0)).toBe("2026-11-03");
+  });
+
+  it("names a night by weekday, day and month", () => {
+    expect(nightLabel("2026-11-01")).toBe("Sun 1 Nov");
+    expect(nightLabel("2026-11-03")).toBe("Tue 3 Nov");
+    expect(nightLabel("2027-01-01")).toBe("Fri 1 Jan");
+  });
+
+  it.each(["2026-11-03", "2028-02-29"])("accepts %s as a Game Night", (night) => {
+    expect(isGameNight(night)).toBe(true);
+  });
+
+  it.each(["2026-02-30", "2027-02-29", "2026-13-01", "2026-11-3", "20261103", "2026-11-03x", ""])(
+    "rejects %j as a Game Night",
+    (night) => {
+      expect(isGameNight(night)).toBe(false);
+    },
+  );
 });

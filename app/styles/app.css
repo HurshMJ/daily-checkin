@@ -781,6 +781,148 @@ input {
   font-weight: 700;
 }
 
+/* A Member who has left the Group since a past night, after their name. */
+.board-row-left {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+  font-weight: 400;
+}
+
+/* History pages: the Group name in secondary text above the heading. */
+.page-header {
+  display: grid;
+  gap: 0.375rem;
+}
+
+.page-context {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+}
+
+/* Yes-count bar list: the dot, the name (which wraps) and "Yes 21 of 30",
+   which drops below the name when the line is too narrow, then a full-width
+   decorative bar filled with Yes up to the share. */
+.yes-counts {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.yes-count {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.375rem 0.5rem;
+}
+
+.yes-count-name {
+  flex: 1 1 6rem;
+  min-width: 0;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.yes-count-number {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.yes-count-of {
+  color: var(--text-secondary);
+  font-weight: 400;
+}
+
+.yes-count-bar {
+  display: block;
+  flex: 1 0 100%;
+  width: 100%;
+  height: var(--bar-height);
+  border-radius: var(--radius-pill);
+  background: var(--row);
+}
+
+.yes-count-fill {
+  fill: var(--yes);
+}
+
+/* Past nights: one row-colour tile per night, linking to its page, with the
+   date and a secondary line on the left and the state pill on the right.
+   The pill drops below the text when the tile is too narrow. */
+.history-nights {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.past-nights {
+  display: grid;
+  gap: 0.5rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.past-night {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  min-height: var(--past-night-height);
+  padding: 0.625rem 1rem;
+  border-radius: var(--radius-row);
+  background: var(--row);
+  color: var(--text);
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.past-night-text {
+  display: grid;
+  flex: 1 1 8rem;
+  min-width: 0;
+}
+
+.past-night-date {
+  font-weight: 700;
+}
+
+.past-night-count {
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+  font-variant-numeric: tabular-nums;
+}
+
+.past-night-pill {
+  padding: 0.125rem 0.75rem;
+  border: var(--border-width) solid transparent;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-display);
+  font-size: var(--size-secondary);
+  font-weight: 600;
+}
+
+.past-night-pill[data-state="on"] {
+  background: var(--yes);
+  color: var(--on-fill);
+}
+
+.past-night-pill[data-state="off"] {
+  background: var(--no);
+  color: var(--on-fill);
+}
+
+.past-night-pill[data-state="never"] {
+  border-color: var(--control-border);
+  color: var(--text);
+}
+
+.past-night-pill[data-state="nobody"] {
+  border-style: dashed;
+  border-color: var(--no-answer);
+  color: var(--text-secondary);
+}
+
 /* Group page: the name, the Member count below, then the cards. */
 .group-header {
   display: grid;
