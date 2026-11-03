@@ -275,7 +275,7 @@ describe("styled Group page", () => {
     expect(body).not.toMatch(/\sstyle=/);
     expect(body).toMatch(/<div class="copy-box"><label[^>]*for="invite-link"/);
     expect(body).toMatch(/<li class="list-tile">[\s\S]*?<span class="list-tile-tag">Owner<\/span><\/li>/);
-    expect(body).toMatch(/<li class="list-tile"><span class="list-tile-text"><span class="list-tile-name">for Sam<\/span>/);
+    expect(body).toMatch(/<li class="list-tile"><span class="list-tile-text"><span class="list-tile-name" id="invite-\d+-name">for Sam<\/span>/);
 
     for (const selector of [".copy-box", ".copy-box-status", ".list-tile", ".list-tile-tag", ".btn-small"]) {
       const declarations = ruleOf(selector);

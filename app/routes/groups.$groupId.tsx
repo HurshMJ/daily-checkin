@@ -189,7 +189,10 @@ function InvitesCard({
           {invites.map((invite) => (
             <li key={invite.id} className="list-tile">
               <span className="list-tile-text">
-                <span className="list-tile-name">{invite.text}</span>
+                {/* The Invite's label or time gives each Cancel button its own description. */}
+                <span className="list-tile-name" id={`invite-${invite.id}-name`}>
+                  {invite.text}
+                </span>
               </span>
               <Form method="post">
                 <input type="hidden" name="intent" value="cancel" />
@@ -199,6 +202,7 @@ function InvitesCard({
                   label="Cancel"
                   pendingLabel="Cancelling…"
                   className="btn-small"
+                  aria-describedby={`invite-${invite.id}-name`}
                 />
               </Form>
             </li>

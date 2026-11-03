@@ -130,12 +130,13 @@ export function joinStatements(db: D1Database, memberId: number, tokenHash: stri
 export function createInvites({ env, clock }: { env: Env; clock: Clock }) {
   const db = env.DB;
 
+  /** The one owner check: a row when the Member owns the Group, none otherwise. */
+  function ownerCheck(groupId: number, memberId: number): D1PreparedStatement {
+    return db.prepare("SELECT 1 FROM groups WHERE id = ?1 AND owner_id = ?2").bind(groupId, memberId);
+  }
+
   async function isOwner(memberId: number, groupId: number): Promise<boolean> {
-    const row = await db
-      .prepare("SELECT 1 FROM groups WHERE id = ?1 AND owner_id = ?2")
-      .bind(groupId, memberId)
-      .first();
-    return row !== null;
+    return (await ownerCheck(groupId, memberId).first()) !== null;
   }
 
   /**
@@ -190,7 +191,7 @@ export function createInvites({ env, clock }: { env: Env; clock: Clock }) {
     /** The Group's pending Invites, newest first, for its Owner; null for anyone else. */
     async pendingInvites(ownerId: number, groupId: number): Promise<PendingInvite[] | null> {
       const [owner, rows] = await db.batch<Record<string, unknown>>([
-        db.prepare("SELECT 1 FROM groups WHERE id = ?1 AND owner_id = ?2").bind(groupId, ownerId),
+        ownerCheck(groupId, ownerId),
         db
           .prepare(
             `SELECT i.id, i.label, i.created_at FROM invites i JOIN groups g ON g.id = i.group_id
