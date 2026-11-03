@@ -8,4 +8,5 @@ export default [
   route("logout", "routes/logout.ts"),
   route("logout-everywhere", "routes/logout-everywhere.ts"),
   route("profile", "routes/profile.tsx"),
+  route("groups/new", "routes/groups.new.tsx"),
 ] satisfies RouteConfig;

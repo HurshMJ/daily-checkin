@@ -345,7 +345,8 @@ input {
 .login-hint,
 .setup-note,
 .card-hint,
-.profile-username {
+.profile-username,
+.group-new-note {
   color: var(--text-secondary);
   font-size: var(--size-secondary);
 }

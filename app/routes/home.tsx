@@ -1,3 +1,5 @@
+import { Link } from "react-router";
+
 import { requireMember } from "~/auth/request";
 import { TopBar } from "~/components/top-bar";
 
@@ -23,10 +25,9 @@ export default function Tonight({ loaderData }: Route.ComponentProps) {
           <span className="empty-ring" aria-hidden="true" />
           <h2>You're not in a Group yet</h2>
           <p className="empty-hint">Create one and invite your friends, or open an Invite link a friend sent you.</p>
-          {/* Wired up when Groups land. */}
-          <button className="btn-primary" type="button">
+          <Link className="btn-primary" to="/groups/new">
             Create a Group
-          </button>
+          </Link>
         </div>
       </main>
     </>

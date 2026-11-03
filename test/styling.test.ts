@@ -149,7 +149,7 @@ describe("styled Tonight and profile", () => {
     expect(body).toContain("Tonight</h1>");
     expect(body).toContain("You&#x27;re not in a Group yet");
     expect(body).toContain("Create one and invite your friends, or open an Invite link a friend sent you.");
-    expect(body).toMatch(/<button[^>]*type="button"[^>]*>Create a Group<\/button>/);
+    expect(linksTo(body, "/groups/new")).toEqual(["Create a Group"]);
 
     const pills = linksTo(body, "/profile");
     expect(pills).toHaveLength(1);
