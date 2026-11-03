@@ -22,7 +22,8 @@ const PRELOADED_FONTS = [
 ];
 
 // The one global stylesheet, linked explicitly so every page gets exactly one
-// <link>, plus preloads for the fonts it uses first.
+// <link>, plus preloads for the fonts it uses first, the web app manifest and
+// the icons. The manifest and icons are static files in public/.
 export const links: Route.LinksFunction = () => [
   ...PRELOADED_FONTS.map((href) => ({
     rel: "preload",
@@ -32,6 +33,9 @@ export const links: Route.LinksFunction = () => [
     crossOrigin: "anonymous" as const,
   })),
   { rel: "stylesheet", href: appStylesHref },
+  { rel: "manifest", href: "/manifest.webmanifest" },
+  { rel: "icon", href: "/favicon.svg", type: "image/svg+xml" },
+  { rel: "apple-touch-icon", href: "/apple-touch-icon.png", sizes: "180x180" },
 ];
 
 export function Layout({ children }: { children: React.ReactNode }) {
@@ -40,6 +44,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <head>
         <meta charSet="utf-8" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
+        {/* Must equal --bg in app/styles/tokens.css and the manifest colours; test/styling.test.ts checks it. */}
+        <meta name="theme-color" content="#1a1220" />
         <Meta />
         <Links />
       </head>

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { AVATAR_COLOUR_NAMES } from "~/auth/palette";
-import tokensCss from "~/styles/tokens.css?raw";
+import { customProperties, tokens } from "./tokens";
 
 /**
  * Every colour pair the design uses, with the WCAG 2.2 AA ratio it must reach:
@@ -46,16 +46,6 @@ const PAIRS: Pair[] = [
   ),
 ];
 
-/** Reads every custom property in a stylesheet as name and raw value. */
-function customProperties(css: string): Map<string, string> {
-  const props = new Map<string, string>();
-  const withoutComments = css.replace(/\/\*[\s\S]*?\*\//g, "");
-  for (const match of withoutComments.matchAll(/(--[\w-]+)\s*:\s*([^;]+);/g)) {
-    props.set(match[1], match[2].trim());
-  }
-  return props;
-}
-
 const HEX = /^#[0-9a-f]{6}$/i;
 
 const LENGTH = /^-?\d*\.?\d+(px|rem|em|%)$/;
@@ -82,8 +72,6 @@ function contrast(a: string, b: string): number {
   const [light, dark] = [luminance(a), luminance(b)].sort((x, y) => y - x);
   return (light + 0.05) / (dark + 0.05);
 }
-
-const tokens = customProperties(tokensCss);
 
 function colour(name: string): string {
   const value = tokens.get(name);

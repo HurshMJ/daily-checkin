@@ -63,6 +63,25 @@ The session cookie is `Secure` with the `__Host-` prefix. Browsers that treat
 it. If a login does not stick locally, the browser dropped the cookie; use one
 of those browsers.
 
+## Icons
+
+`public/favicon.svg` is the one source of the app icon art and is also the
+favicon. The PNG icons in `public/` (`icon-192.png`, `icon-512.png` for both
+the `any` and `maskable` manifest entries, and the 180x180
+`apple-touch-icon.png`) are rendered from it once and committed. After changing
+the SVG, regenerate them from the repository root:
+
+```sh
+node --input-type=module -e 'import sharp from "sharp"; for (const [n, f] of [[192, "icon-192.png"], [512, "icon-512.png"], [180, "apple-touch-icon.png"]]) await sharp("public/favicon.svg", { density: 72 * n / 512 * 4 }).resize(n, n).flatten({ background: "#1a1220" }).removeAlpha().png().toFile("public/" + f);'
+```
+
+`sharp` is not a project dependency; today it is installed as a dependency of
+wrangler's miniflare. If `npm ls sharp` finds nothing, run
+`npm install --no-save sharp` first. The PNGs must stay opaque RGB with no
+alpha channel. `test/installed-look.test.ts` checks their sizes and colour
+type and that the manifest colours equal `--bg` in `app/styles/tokens.css`;
+`test/styling.test.ts` checks the same for the `theme-color` meta.
+
 ## Operator commands
 
 Operator commands run on the Operator's machine with wrangler logged in. They
