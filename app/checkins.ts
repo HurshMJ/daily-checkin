@@ -99,6 +99,28 @@ export type SetNoteResult = { ok: true } | { ok: false; error: string };
 
 export const ANSWER_FIRST_MESSAGE = "Answer Yes, Maybe or No before adding a Note.";
 
+/**
+ * The one Game On statement: marks every Group of the Member that has at
+ * least its threshold of Yes answers on the Game Night as Game On. Run it in
+ * the same D1 batch as any change that can raise a Group's Yes count: a
+ * Check-in change, or the Member joining a Group. Nothing ever clears the
+ * mark within the night, which is how Game Off is told apart.
+ */
+export function gameOnStatement(db: D1Database, memberId: number, night: string): D1PreparedStatement {
+  return db
+    .prepare(
+      `INSERT INTO group_night_state (group_id, game_night, was_on)
+       SELECT g.id, ?2, 1
+       FROM memberships mine JOIN groups g ON g.id = mine.group_id
+       WHERE mine.member_id = ?1
+         AND (SELECT COUNT(*) FROM memberships m
+              JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
+              WHERE m.group_id = g.id) >= g.threshold
+       ON CONFLICT (group_id, game_night) DO UPDATE SET was_on = 1`,
+    )
+    .bind(memberId, night);
+}
+
 /** Check-ins and tonight's Boards, on D1 and the injected clock. */
 export function createCheckins({ env, clock }: { env: Env; clock: Clock }) {
   const db = env.DB;
@@ -123,18 +145,7 @@ export function createCheckins({ env, clock }: { env: Env; clock: Clock }) {
              DO UPDATE SET availability = excluded.availability, updated_at = excluded.updated_at`,
           )
           .bind(memberId, night, availability, now.toISOString()),
-        db
-          .prepare(
-            `INSERT INTO group_night_state (group_id, game_night, was_on)
-             SELECT g.id, ?2, 1
-             FROM memberships mine JOIN groups g ON g.id = mine.group_id
-             WHERE mine.member_id = ?1
-               AND (SELECT COUNT(*) FROM memberships m
-                    JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
-                    WHERE m.group_id = g.id) >= g.threshold
-             ON CONFLICT (group_id, game_night) DO UPDATE SET was_on = 1`,
-          )
-          .bind(memberId, night),
+        gameOnStatement(db, memberId, night),
       ]);
     },
 
