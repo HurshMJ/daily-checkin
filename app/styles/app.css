@@ -2,8 +2,9 @@
  * The one global stylesheet, loaded once by the root route. Every value comes
  * from tokens.css. Classes are kebab-case and prefixed by their component;
  * state reaches the CSS only through aria-*, disabled and data-* attributes.
- * Nothing here moves: only colours and opacity fade, so reduced motion needs
- * no override.
+ * Nothing here moves: only colours and opacity fade. The one exception is
+ * the pending button's ring, which rotates and stands still under reduced
+ * motion.
  */
 @import "./tokens.css";
 
@@ -214,6 +215,36 @@ input {
   cursor: not-allowed;
 }
 
+/* Pending: the button keeps its variant's fill and shows a ring before its
+   "…ing" label. SubmitButton sets aria-busy and ignores further taps. */
+.btn-primary[aria-busy="true"],
+.btn-secondary[aria-busy="true"],
+.btn-destructive[aria-busy="true"] {
+  cursor: progress;
+}
+
+.btn-ring {
+  flex: none;
+  width: 1em;
+  height: 1em;
+  border: var(--border-width) solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: btn-ring-turn var(--duration-ring) linear infinite;
+}
+
+@keyframes btn-ring-turn {
+  to {
+    transform: rotate(1turn);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .btn-ring {
+    animation: none;
+  }
+}
+
 /* Fields: a bold label above a pill input, a secondary hint and an error line below. */
 .field {
   display: grid;
@@ -281,6 +312,17 @@ input {
   font-size: var(--size-banner);
   font-weight: 600;
   line-height: var(--line-height-heading);
+}
+
+/* Offline bar: a full-width Maybe bar under the top bar, or at the top of
+   screens without one. Its live region stays empty while online. */
+.offline-bar {
+  padding: 0.5rem 1rem;
+  background: var(--maybe);
+  color: var(--on-fill);
+  font-size: var(--size-secondary);
+  font-weight: 700;
+  text-align: center;
 }
 
 /* Login and Setup Link: a title block with a secondary line below. */
