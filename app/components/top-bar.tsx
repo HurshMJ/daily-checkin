@@ -14,7 +14,7 @@ export function TopBar({ back = false, colour }: { back?: boolean; colour?: Avat
     <header className="top-bar">
       {back ? (
         <Link to="/" className="top-bar-back">
-          ‹ Tonight
+          <span aria-hidden="true">‹</span> Tonight
         </Link>
       ) : null}
       {colour ? (

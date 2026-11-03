@@ -67,6 +67,7 @@ export default function SetupLink({ loaderData, actionData }: Route.ComponentPro
           <h1>Create your login</h1>
         </header>
         <div className="notice-error" role="alert">
+          <p className="notice-title">Can't use this link</p>
           <p>{UNUSABLE_LINK_MESSAGE}</p>
         </div>
       </main>

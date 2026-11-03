@@ -125,7 +125,7 @@ describe("styled Setup Link page", () => {
 
     expect(response.status).toBe(404);
     expect(html).not.toMatch(/\sstyle=/);
-    expect(html).toMatch(/role="alert"/);
+    expect(html).toMatch(/<div[^>]*role="alert"[^>]*><p class="notice-title">Can&#x27;t use this link<\/p>/);
     expect(html).toContain("This Setup Link does not work.");
   });
 });
@@ -165,7 +165,8 @@ describe("styled Tonight and profile", () => {
 
     expect(response.status).toBe(200);
     expect(html).not.toMatch(/\sstyle=/);
-    expect(linksTo(body, "/")).toEqual(["‹ Tonight"]);
+    // The glyph is hidden from screen readers, so the link's name is just "Tonight".
+    expect(linksTo(body, "/")).toEqual(['<span aria-hidden="true">‹</span> Tonight']);
     expect(linksTo(body, "/profile")).toEqual([]);
   });
 });

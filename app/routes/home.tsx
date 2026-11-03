@@ -8,8 +8,8 @@ export function meta(_: Route.MetaArgs) {
 }
 
 export function loader({ context }: Route.LoaderArgs) {
-  const { username, colour } = requireMember(context);
-  return { username, colour };
+  const { colour } = requireMember(context);
+  return { colour };
 }
 
 /** Tonight. A Member in no Group sees the empty state. */
