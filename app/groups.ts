@@ -1,3 +1,4 @@
+import type { AvatarColour } from "~/auth/palette";
 import type { Clock } from "~/services";
 import { codePoints, hasInvisible, INVISIBLE_MESSAGE, normaliseText } from "~/text-rules";
 
@@ -21,6 +22,16 @@ export function groupNameError(name: string): string | null {
   if (length < 1 || length > MAX_GROUP_NAME_LENGTH) return `Use 1 to ${MAX_GROUP_NAME_LENGTH} characters.`;
   if (hasInvisible(name)) return INVISIBLE_MESSAGE;
   return null;
+}
+
+/** A Group as its Members see it on the Group page. */
+export interface GroupView {
+  id: number;
+  name: string;
+  threshold: number;
+  ownerId: number;
+  /** Every Member, in the order they joined. */
+  members: { id: number; username: string; colour: AvatarColour }[];
 }
 
 export type CreateGroupResult = { ok: true; groupId: number } | { ok: false; error: string; name: string };
@@ -50,6 +61,35 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
           .bind(memberId, now),
       ]);
       return { ok: true, groupId: inserted.results[0].id };
+    },
+
+    /** The Group with its Members, for one of its Members; null for anyone else or no such Group. */
+    async groupFor(memberId: number, groupId: number): Promise<GroupView | null> {
+      const [group, members] = await db.batch<Record<string, unknown>>([
+        db
+          .prepare(
+            `SELECT g.id, g.name, g.threshold, g.owner_id FROM groups g
+             JOIN memberships mine ON mine.group_id = g.id AND mine.member_id = ?2
+             WHERE g.id = ?1`,
+          )
+          .bind(groupId, memberId),
+        db
+          .prepare(
+            `SELECT p.id, p.username, p.colour FROM memberships m JOIN members p ON p.id = m.member_id
+             WHERE m.group_id = ?1 AND EXISTS (SELECT 1 FROM memberships mine WHERE mine.group_id = ?1 AND mine.member_id = ?2)
+             ORDER BY m.joined_at, p.id`,
+          )
+          .bind(groupId, memberId),
+      ]);
+      const row = group.results[0] as { id: number; name: string; threshold: number; owner_id: number } | undefined;
+      if (!row) return null;
+      return {
+        id: row.id,
+        name: row.name,
+        threshold: row.threshold,
+        ownerId: row.owner_id,
+        members: members.results as GroupView["members"],
+      };
     },
   };
 }

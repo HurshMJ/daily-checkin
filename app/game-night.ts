@@ -14,3 +14,16 @@ const NIGHT_STARTS_AT_MS = 6 * 60 * 60 * 1000;
 export function gameNightOf(instant: Date): string {
   return new Date(instant.getTime() + UTC_PLUS_4_MS - NIGHT_STARTS_AT_MS).toISOString().slice(0, 10);
 }
+
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/**
+ * An instant as the day, month and 24-hour time in UTC+4, the Game Night
+ * zone, such as "3 Nov, 16:05". The fixed offset needs no time zone data.
+ */
+export function zoneDayTime(instant: Date): string {
+  const local = new Date(instant.getTime() + UTC_PLUS_4_MS);
+  const hours = String(local.getUTCHours()).padStart(2, "0");
+  const minutes = String(local.getUTCMinutes()).padStart(2, "0");
+  return `${local.getUTCDate()} ${MONTHS[local.getUTCMonth()]}, ${hours}:${minutes}`;
+}

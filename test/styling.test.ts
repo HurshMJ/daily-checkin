@@ -1,4 +1,7 @@
+import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
+
+import appCss from "~/styles/app.css?raw";
 
 import { startApp } from "./harness";
 import { tokens } from "./tokens";
@@ -234,6 +237,51 @@ describe("installed look in every page head", () => {
     for (const [name, html] of Object.entries(await pages())) {
       expect(html, name).not.toContain("apple-mobile-web-app-capable");
       expect(html, name).not.toContain("apple-touch-startup-image");
+    }
+  });
+});
+
+/** The declarations of the one rule in app.css whose selector is exactly `selector`. */
+function ruleOf(selector: string): string {
+  const css = appCss.replace(/\/\*[\s\S]*?\*\//g, "");
+  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, selectors]) => selectors.trim() === selector);
+  expect(rules, selector).toHaveLength(1);
+  return rules[0][2];
+}
+
+describe("styled Group page", () => {
+  async function ownerPage() {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    await alice.post("/groups/new", { name: "Friday" });
+    const group = await env.DB.prepare("SELECT id FROM groups").first<{ id: number }>();
+    const html = await (await alice.post(`/groups/${group!.id}`, { intent: "make", label: "for Sam" })).text();
+    return bodyOf(html);
+  }
+
+  it("draws the copy box and the list tiles from tokens only, with no inline styles", async () => {
+    const body = await ownerPage();
+    expect(body).not.toMatch(/\sstyle=/);
+    expect(body).toMatch(/<div class="copy-box"><label[^>]*for="invite-link"/);
+    expect(body).toMatch(/<li class="list-tile">[\s\S]*?<span class="list-tile-tag">Owner<\/span><\/li>/);
+    expect(body).toMatch(/<li class="list-tile"><span class="list-tile-text"><span class="list-tile-name">for Sam<\/span>/);
+
+    for (const selector of [".copy-box", ".copy-box-status", ".list-tile", ".list-tile-tag", ".btn-small"]) {
+      const declarations = ruleOf(selector);
+      // Every colour comes from a token: no hex, rgb or named colour literals.
+      expect(declarations, selector).not.toMatch(/#[0-9a-f]{3,8}\b|rgba?\(|hsla?\(/i);
+      for (const [, value] of declarations.matchAll(/(?:^|;)\s*(?:color|background|border(?:-[a-z-]+)?)\s*:\s*([^;]+)/g)) {
+        if (/^(transparent|none|0)$/.test(value.trim())) continue;
+        expect(value, selector).toMatch(/var\(--/);
+      }
+    }
+    expect(ruleOf(".copy-box")).toMatch(/border: var\(--border-width\) dashed var\(--accent\)/);
+  });
+
+  it("uses no modifier classes: list tiles and buttons carry one class each", async () => {
+    const body = await ownerPage();
+    for (const [, classes] of body.matchAll(/class="((?:list-tile|btn-small|copy-box)[^"]*)"/g)) {
+      expect(classes.split(" "), classes).toHaveLength(1);
     }
   });
 });

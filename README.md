@@ -25,8 +25,9 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `app/` | React Router app: `root.tsx`, `routes.ts`, and route modules in `app/routes/` |
 | `app/services.ts` | The Clock and Push sender interfaces and their production versions |
 | `app/auth/` | Auth: passwords, sessions, Setup Links, username and password rules, the avatar palette, the `Origin` check |
-| `app/game-night.ts` | `gameNightOf()`: the Game Night of an instant, the UTC+4 date of the most recent 06:00 UTC+4 |
-| `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule) and Check-ins (Availability, Note, the Game On step, tonight's Boards) |
+| `app/game-night.ts` | `gameNightOf()`: the Game Night of an instant, the UTC+4 date of the most recent 06:00 UTC+4; `zoneDayTime()` shows a time in that zone |
+| `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule, the Group page read) and Check-ins (Availability, Note, the Game On statement, tonight's Boards) |
+| `app/invites.ts` | Invites: the label rule, Owner-only make, list and cancel, and joining a Group with an Invite |
 | `app/text-rules.ts` | The one counting rule for usernames, Group names and Notes: trimmed, NFC, code points, no invisible characters |
 | `migrations/` | Numbered D1 migrations. Add new files only; never edit or drop an applied one |
 | `test/` | Tests and the test harness |
@@ -141,6 +142,33 @@ The failures live in the `login_failures` table (migration 0004); rows older
 than an hour are deleted whenever a new failure is recorded. Two attempts at
 the same instant can both pass a limit check, so a burst may get one or two
 attempts past a limit.
+
+## Invites
+
+A Group's Owner invites friends from the Group page (`/groups/<id>`, linked
+from each Board on Tonight):
+
+- **Make an Invite** shows a new link, `/invite/<token>`, once, with a Copy
+  button. The token is never stored, only its SHA-256, so the link cannot be
+  shown again; the pending list names each Invite by its optional label ("Who
+  is it for?", up to 40 characters, seen only by the Owner) or by when it was
+  made, in UTC+4.
+- Each Invite works **once** and **never expires**. The Owner can cancel a
+  pending Invite; a used, cancelled or unknown link shows one warning, "This
+  Invite has been used or cancelled."
+- Only the Group's current Owner can make, list and cancel its Invites. Other
+  Members see the Group's name, threshold and Members; anyone else gets 404.
+- Opening a link logged out offers **Create a login** or **Log in**; either one
+  joins the Group at once and lands on Tonight. A logged-in Member taps
+  **Join**. A Member who is already in the Group is told so, and the Invite
+  stays unused.
+- Joining counts the Member's Yes for tonight at once, so the Group can reach
+  Game On the moment they join.
+
+Invites live in the `invites` table (migration 0005). Treat a pending link
+like a password: anyone holding it can join the Group until it is used or
+cancelled. The Invite and Group pages send `Referrer-Policy: no-referrer`, so
+the link never leaks to another site.
 
 ## Tests
 
