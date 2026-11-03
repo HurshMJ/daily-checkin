@@ -1,3 +1,5 @@
+import { codePoints, hasInvisible, INVISIBLE_MESSAGE, normaliseText } from "~/text-rules";
+
 import { type AvatarColour, isAvatarColour } from "./palette";
 
 /**
@@ -5,7 +7,7 @@ import { type AvatarColour, isAvatarColour } from "./palette";
  * same name typed on two keyboards is one name.
  */
 export function normaliseUsername(raw: string): string {
-  return raw.trim().normalize("NFC");
+  return normaliseText(raw);
 }
 
 /** The key usernames are unique on and looked up by at login. */
@@ -24,24 +26,16 @@ export function normalisePassword(raw: string): string {
 /** The longest password accepted, in code points of the NFC form. */
 export const MAX_PASSWORD_LENGTH = 128;
 
-function codePoints(text: string): number {
-  return [...text].length;
-}
-
 /** True when a normalised password is longer than any login can have. */
 export function passwordTooLong(password: string): boolean {
   return codePoints(password) > MAX_PASSWORD_LENGTH;
 }
 
-// Control characters (Cc, such as tab and newline) and invisible format
-// characters (Cf, such as zero-width space) would let two names look alike.
-const INVISIBLE = /[\p{Cc}\p{Cf}]/u;
-
 /** Returns an error message for the username field, or null when it is fine. */
 export function usernameError(username: string): string | null {
   const length = codePoints(username);
   if (length < 3 || length > 32) return "Use 3 to 32 characters.";
-  if (INVISIBLE.test(username)) return "Remove tabs, line breaks and invisible characters.";
+  if (hasInvisible(username)) return INVISIBLE_MESSAGE;
   return null;
 }
 

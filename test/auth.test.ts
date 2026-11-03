@@ -25,7 +25,10 @@ describe("migration 0002", () => {
     const { results } = await env.DB.prepare(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE '\\_%' ESCAPE '\\' AND name NOT LIKE 'sqlite%' AND name NOT LIKE 'd1_%' ORDER BY name",
     ).all<{ name: string }>();
-    expect(results.map((row) => row.name)).toEqual(["members", "scheduler_state", "sessions", "setup_links"]);
+    // Later migrations add more tables; 0002's must all be there.
+    expect(results.map((row) => row.name)).toEqual(
+      expect.arrayContaining(["members", "scheduler_state", "sessions", "setup_links"]),
+    );
   });
 });
 
