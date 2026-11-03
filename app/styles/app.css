@@ -641,10 +641,6 @@ input {
   font-size: var(--size-secondary);
 }
 
-.checkin-status:empty {
-  display: none;
-}
-
 .checkin,
 .checkin-form,
 .checkin-note {

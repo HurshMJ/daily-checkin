@@ -249,6 +249,17 @@ function ruleOf(selector: string): string {
   return rules[0][2];
 }
 
+describe("Check-in live region", () => {
+  it("is never hidden from assistive tech, so Saving your answer… is announced", () => {
+    const css = appCss.replace(/\/\*[\s\S]*?\*\//g, "");
+    const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].filter(([, selectors]) => selectors.includes(".checkin-status"));
+    expect(rules.length).toBeGreaterThan(0);
+    for (const [, selectors, declarations] of rules) {
+      expect(declarations, selectors.trim()).not.toMatch(/display\s*:\s*none|visibility\s*:\s*hidden/);
+    }
+  });
+});
+
 describe("styled Group page", () => {
   async function ownerPage() {
     const app = startApp();
@@ -264,7 +275,7 @@ describe("styled Group page", () => {
     expect(body).not.toMatch(/\sstyle=/);
     expect(body).toMatch(/<div class="copy-box"><label[^>]*for="invite-link"/);
     expect(body).toMatch(/<li class="list-tile">[\s\S]*?<span class="list-tile-tag">Owner<\/span><\/li>/);
-    expect(body).toMatch(/<li class="list-tile"><span class="list-tile-text"><span class="list-tile-name">for Sam<\/span>/);
+    expect(body).toMatch(/<li class="list-tile"><span class="list-tile-text"><span class="list-tile-name" id="invite-\d+-name">for Sam<\/span>/);
 
     for (const selector of [".copy-box", ".copy-box-status", ".list-tile", ".list-tile-tag", ".btn-small"]) {
       const declarations = ruleOf(selector);

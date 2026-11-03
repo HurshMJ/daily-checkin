@@ -27,17 +27,28 @@ export async function loader({ context }: Route.LoaderArgs) {
 /**
  * Tonight's one action. The form's intent field says which save it is:
  * "availability" sets Yes, Maybe or No; "note" sets or removes the Note.
+ * Any other intent, or none, is refused with 400 and writes nothing.
  */
 export async function action({ request, context }: Route.ActionArgs) {
   const member = requireMember(context);
   const form = await request.formData();
   const checkins = createCheckins(context.get(appContext));
 
-  if (form.get("intent") === "note") {
+  const intent = form.get("intent");
+  if (intent === "note") {
     const note = String(form.get("note") ?? "");
-    const result = await checkins.setNote(member.id, note);
-    if (!result.ok) return data({ intent: "note" as const, error: result.error, note }, { status: 400 });
+    let result;
+    try {
+      result = await checkins.setNote(member.id, note);
+    } catch (error) {
+      console.error("Saving a Note failed", error);
+      return data({ intent: "note" as const, failed: true as const, error: null, note }, { status: 503 });
+    }
+    if (!result.ok) return data({ intent: "note" as const, failed: false as const, error: result.error, note }, { status: 400 });
     return redirect("/", 303);
+  }
+  if (intent !== "availability") {
+    return data({ intent: null }, { status: 400 });
   }
 
   const availability = form.get("availability");
@@ -82,7 +93,8 @@ export default function Tonight({ loaderData, actionData }: Route.ComponentProps
   const pendingAvailability = pendingIntent === "availability" ? navigation.formData?.get("availability") : null;
   const own = loaderData.own;
   const failedAnswer = actionData?.intent === "availability" && !submitting ? actionData : null;
-  const noteError = actionData?.intent === "note" && !submitting ? actionData : null;
+  const noteResult = actionData?.intent === "note" && !submitting ? actionData : null;
+  const failedNote = noteResult?.failed ? noteResult : null;
 
   return (
     <>
@@ -113,11 +125,20 @@ export default function Tonight({ loaderData, actionData }: Route.ComponentProps
               {SAVE_FAILED_MESSAGE}
             </Notice>
           ) : null}
+          {failedNote ? (
+            <Notice
+              tone="error"
+              title="Can't save your Note"
+              retry={() => submit({ intent: "note", note: failedNote.note }, { method: "post" })}
+            >
+              {SAVE_FAILED_MESSAGE}
+            </Notice>
+          ) : null}
           <NoteForm
             answered={own !== null}
             saved={own?.note ?? null}
-            error={noteError?.error ?? null}
-            typed={noteError?.note ?? null}
+            error={noteResult?.error ?? null}
+            typed={noteResult?.note ?? null}
             pending={pendingIntent === "note"}
           />
         </section>

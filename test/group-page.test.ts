@@ -27,7 +27,7 @@ async function idOf(table: "members" | "groups", column: "username" | "name", va
 function pendingTiles(main: string): string[] {
   const list = main.match(/<ul class="list" aria-label="Pending Invites">([\s\S]*?)<\/ul>/);
   if (!list) return [];
-  return [...list[1].matchAll(/<span class="list-tile-name">([^<]*)<\/span>/g)].map(([, text]) => text);
+  return [...list[1].matchAll(/<span class="list-tile-name"[^>]*>([^<]*)<\/span>/g)].map(([, text]) => text);
 }
 
 /** Alice owns "Friday"; Bob is a Member through an Invite; Carol is in no Group. */
@@ -134,6 +134,23 @@ describe("making and cancelling Invites on the Group page", () => {
     // The new link works for someone with no login.
     const invite = await app.fetch(new URL(link!).pathname);
     expect(invite.status).toBe(200);
+  });
+
+  it("names each pending Invite's Cancel button by that Invite's label or time", async () => {
+    const { alice, page } = await setUp();
+    await alice.post(page, { intent: "make", label: "for Sam" });
+    await alice.post(page, { intent: "make", label: "for Kim" });
+    const main = mainOf(await (await alice.get(page)).text());
+    const list = main.match(/<ul class="list" aria-label="Pending Invites">([\s\S]*?)<\/ul>/)![1];
+
+    const tiles = [...list.matchAll(/<li class="list-tile">([\s\S]*?)<\/li>/g)].map(([, tile]) => tile);
+    expect(tiles).toHaveLength(2);
+    const ids = tiles.map((tile) => {
+      const describedBy = tile.match(/<button[^>]*aria-describedby="([^"]+)"[^>]*>Cancel<\/button>/)![1];
+      expect(tile).toMatch(new RegExp(`<span class="list-tile-name" id="${describedBy}">for (Sam|Kim)</span>`));
+      return describedBy;
+    });
+    expect(new Set(ids).size).toBe(2);
   });
 
   it("shows a bad label's error and keeps what was typed", async () => {
