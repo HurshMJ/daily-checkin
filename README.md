@@ -223,7 +223,9 @@ returns the Worker's handlers, and the default export is
 `createWorker(productionServices)`. Each request puts the services, `env` and
 the execution context into React Router's context under `appContext`, so a
 loader or action reads them with `context.get(appContext)`. The `scheduled`
-handler receives the same services directly.
+handler receives the same services directly. Each hourly run calls the Reset,
+`createHistory().reset()` in `app/history.ts`, which freezes any ended Game
+Night into History and does nothing until a new Game Night has started.
 
 Every Game Night comes from `gameNightOf(clock.now())`, so moving the test
 clock across 02:00 UTC (06:00 UTC+4) starts a new night.
