@@ -206,6 +206,14 @@ input {
   background: var(--destructive-pressed);
 }
 
+/* Tap again: an armed destructive button turns solid No until the second
+   tap or its timeout. Only colours change, so reduced motion needs no rule. */
+.btn-destructive[data-armed="true"] {
+  background: var(--no);
+  border-color: var(--no);
+  color: var(--on-fill);
+}
+
 .btn-primary:disabled,
 .btn-secondary:disabled,
 .btn-destructive:disabled {
@@ -335,7 +343,9 @@ input {
 
 .login-tagline,
 .login-hint,
-.setup-note {
+.setup-note,
+.card-hint,
+.profile-username {
   color: var(--text-secondary);
   font-size: var(--size-secondary);
 }
@@ -356,6 +366,11 @@ input {
   width: 1rem;
   height: 1rem;
   border-radius: 50%;
+}
+
+.avatar-dot-large {
+  width: 3rem;
+  height: 3rem;
 }
 
 .avatar-dot[data-colour="blue"] {
@@ -388,6 +403,23 @@ input {
 
 .avatar-dot[data-colour="slate"] {
   background: var(--avatar-slate);
+}
+
+/* Profile: the large dot beside the name and the @username, then the cards. */
+.profile-header {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.profile-name {
+  font-size: var(--size-heading);
+}
+
+/* A card's form: its button with a hint line below. */
+.card-action {
+  display: grid;
+  gap: 0.375rem;
 }
 
 /* Top bar: "‹ Tonight" on the left, the "You" pill on the right. */
@@ -457,7 +489,12 @@ input {
   min-width: 0;
   margin: 0;
   padding: 0;
-  border: 0;
+  /* Transparent until invalid, so the error border never shifts the tiles. */
+  border: var(--border-width) solid transparent;
+}
+
+.picker[aria-invalid="true"] {
+  border-color: var(--no);
 }
 
 .picker-legend {

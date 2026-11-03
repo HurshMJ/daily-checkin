@@ -169,4 +169,23 @@ describe("styled Tonight and profile", () => {
     expect(linksTo(body, "/")).toEqual(['<span aria-hidden="true">‹</span> Tonight']);
     expect(linksTo(body, "/profile")).toEqual([]);
   });
+
+  it("heads the profile with the large dot, the name and @username, then a Sessions card", async () => {
+    const browser = await newMember();
+    const html = await (await browser.get("/profile")).text();
+    const body = bodyOf(html).replaceAll("<!-- -->", "");
+
+    expect(html).not.toMatch(/\sstyle=/);
+    expect(body).toContain('<span class="avatar-dot avatar-dot-large" data-colour="pink" aria-hidden="true"></span>');
+    expect(avatarDots(body)).toEqual(["pink"]);
+    expect(body).toMatch(/<h1[^>]*>Alice<\/h1><p class="profile-username">@Alice<\/p>/);
+    expect(body).not.toContain("Logged in as");
+
+    const card = body.match(/<section class="card"[^>]*>([\s\S]*?)<\/section>/);
+    expect(card, "Sessions card").not.toBeNull();
+    expect(card![1]).toMatch(/^<h2[^>]*>Sessions<\/h2>/);
+    expect(card![1]).toMatch(
+      /<form[^>]*action="\/logout"[\s\S]*>Log out<\/button>[\s\S]*<form[^>]*action="\/logout-everywhere"[\s\S]*>Log out everywhere<\/button>/,
+    );
+  });
 });

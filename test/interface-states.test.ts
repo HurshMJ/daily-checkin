@@ -4,7 +4,8 @@ import { describe, expect, it } from "vitest";
 
 import { Notice } from "~/components/notice";
 import { OfflineStatus } from "~/components/offline-bar";
-import { SubmitButton } from "~/components/submit-button";
+import { isSubmittingTo, SubmitButton } from "~/components/submit-button";
+import { TAP_AGAIN_MS, tapAgain, TapAgainButton } from "~/components/tap-again-button";
 
 import { startApp } from "./harness";
 
@@ -73,7 +74,10 @@ describe("field errors", () => {
     const html = bodyOf(await response.text());
 
     expect(response.status).toBe(400);
-    expect(html).toMatch(/<fieldset[^>]*aria-describedby="colour-error"[^>]*>/);
+    const fieldset = html.match(/<fieldset[^>]*>/)![0];
+    expect(fieldset).toContain('role="radiogroup"');
+    expect(fieldset).toContain('aria-invalid="true"');
+    expect(fieldset).toContain('aria-describedby="colour-error"');
     expect(tagWithId(html, "colour-error")).toContain('class="field-error"');
     expect(textOfId(html, "colour-error")).toBe("Error: Choose a colour.");
   });
@@ -85,6 +89,9 @@ describe("field errors", () => {
 
     expect(html).not.toContain("Error: ");
     expect(html).not.toContain("aria-invalid");
+    const fieldset = html.match(/<fieldset[^>]*>/)![0];
+    expect(fieldset).toContain('role="radiogroup"');
+    expect(fieldset).not.toContain("aria-describedby");
   });
 });
 
@@ -144,6 +151,24 @@ describe("idle forms", () => {
   });
 });
 
+describe("isSubmittingTo", () => {
+  it("is false while idle", () => {
+    expect(isSubmittingTo({ state: "idle" }, "/logout")).toBe(false);
+  });
+
+  it("is true while submitting to this action", () => {
+    expect(isSubmittingTo({ state: "submitting", formAction: "/logout" }, "/logout")).toBe(true);
+  });
+
+  it("stays true while loading the redirect that follows this action", () => {
+    expect(isSubmittingTo({ state: "loading", formAction: "/logout" }, "/logout")).toBe(true);
+  });
+
+  it("is false while submitting to another action", () => {
+    expect(isSubmittingTo({ state: "submitting", formAction: "/logout-everywhere" }, "/logout")).toBe(false);
+  });
+});
+
 describe("SubmitButton", () => {
   const props = { label: "Log in", pendingLabel: "Logging in…", className: "btn-primary" };
 
@@ -164,6 +189,55 @@ describe("SubmitButton", () => {
     expect(html).toContain('<span class="btn-ring" aria-hidden="true"></span>');
     expect(html).toContain("Logging in…");
     expect(html).not.toContain(">Log in<");
+  });
+});
+
+describe("tapAgain", () => {
+  const armedAt = 1_000_000;
+
+  it("arms a button that is not armed", () => {
+    expect(tapAgain(null, armedAt)).toBe("arm");
+  });
+
+  it("confirms a second tap inside the wait", () => {
+    expect(tapAgain(armedAt, armedAt + TAP_AGAIN_MS - 1)).toBe("confirm");
+  });
+
+  it("arms again once the wait is over", () => {
+    expect(TAP_AGAIN_MS).toBe(4000);
+    expect(tapAgain(armedAt, armedAt + TAP_AGAIN_MS)).toBe("arm");
+  });
+});
+
+describe("TapAgainButton", () => {
+  const props = {
+    label: "Log out everywhere",
+    confirmLabel: "Tap again to log out every device",
+    pendingLabel: "Logging out…",
+    pending: false,
+  };
+
+  it("is a plain destructive submit button when idle", () => {
+    const html = renderToString(createElement(TapAgainButton, props));
+
+    expect(html).toBe('<button type="submit" class="btn-destructive">Log out everywhere</button>');
+  });
+
+  it("shows the confirm label and carries the confirmation when armed", () => {
+    const html = renderToString(createElement(TapAgainButton, { ...props, armed: true }));
+
+    expect(html).toBe(
+      '<button data-armed="true" type="submit" class="btn-destructive">Tap again to log out every device</button>' +
+        '<input type="hidden" name="confirm" value="yes"/>',
+    );
+  });
+
+  it("shows the ring while the confirmed submit is pending", () => {
+    const html = renderToString(createElement(TapAgainButton, { ...props, armed: true, pending: true }));
+
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('<span class="btn-ring" aria-hidden="true"></span>');
+    expect(html).toContain("Logging out…");
   });
 });
 

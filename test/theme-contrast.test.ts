@@ -31,6 +31,7 @@ const PAIRS: Pair[] = [
   ["--maybe", "--row", NON_TEXT, "warning notice stripe"],
   ["--no", "--row", NON_TEXT, "error notice stripe"],
   ["--no", "--bg", TEXT, "destructive button and field error line"],
+  ["--no", "--surface", TEXT, "destructive button on a card"],
   ["--no", "--bg", NON_TEXT, "field error border"],
   ["--no", "--destructive-pressed", TEXT, "pressed destructive button"],
   ["--text", "--secondary-pressed", TEXT, "pressed secondary button"],
