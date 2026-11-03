@@ -242,6 +242,33 @@ describe("Tonight with a Group", () => {
     expect(await checkins()).toEqual([expect.objectContaining({ availability: "no" })]);
   });
 
+  it("shows a failed Note save with Try again, keeps the typed Note and writes nothing", async () => {
+    const { alice } = await aliceWithGroup();
+    await alice.post("/?index", answer("yes"));
+    await alice.post("/?index", note("busy"));
+    await env.DB.prepare(
+      "CREATE TRIGGER fail_note BEFORE UPDATE OF note ON checkins BEGIN SELECT RAISE(ABORT, 'test failure'); END",
+    ).run();
+
+    const response = await alice.post("/?index", note("on after 10"));
+    const body = bodyOf(await response.text());
+
+    expect(response.status).toBe(503);
+    expect(body).toMatch(/<div class="notice-error" role="alert"><p class="notice-title">Can&#x27;t save your Note<\/p>/);
+    expect(body.match(/role="alert"/g)).toHaveLength(1);
+    expect(body).toContain('<button type="button" class="btn-secondary">Try again</button>');
+    expect(body.match(/<input[^>]*id="note"[^>]*>/)![0]).toContain('value="on after 10"');
+    expect(await checkins()).toEqual([expect.objectContaining({ availability: "yes", note: "busy" })]);
+  });
+
+  it("refuses an unknown or missing intent and writes nothing", async () => {
+    const { alice } = await aliceWithGroup();
+
+    expect((await alice.post("/?index", { intent: "foo", availability: "yes" })).status).toBe(400);
+    expect((await alice.post("/?index", { availability: "yes" })).status).toBe(400);
+    expect(await checkins()).toEqual([]);
+  });
+
   it("refuses a cross-origin Check-in", async () => {
     const { alice } = await aliceWithGroup();
     const response = await alice.post("/?index", answer("yes"), { origin: "https://evil.test" });
