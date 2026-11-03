@@ -32,7 +32,8 @@ export function tapAgain(armedAt: number | null, now: number): "arm" | "confirm"
  * otherwise it reverts. Armed, it adds the confirmation field to its form.
  * Pass `armed` when the server sends the page back after a first tap made
  * without JavaScript, so the next tap confirms. It stays one <button>
- * throughout, so it keeps focus.
+ * throughout, so it keeps focus. `describedBy` names the element that tells
+ * repeated buttons apart, such as the Member or Group the button acts on.
  */
 export function TapAgainButton({
   label,
@@ -40,12 +41,14 @@ export function TapAgainButton({
   pendingLabel,
   pending,
   armed: serverArmed = false,
+  describedBy,
 }: {
   label: string;
   confirmLabel: string;
   pendingLabel: string;
   pending: boolean;
   armed?: boolean;
+  describedBy?: string;
 }) {
   const [armedAt, setArmedAt] = useState<number | null>(() => (serverArmed ? Date.now() : null));
   const armed = armedAt !== null;
@@ -78,6 +81,7 @@ export function TapAgainButton({
         pendingLabel={pendingLabel}
         className="btn-destructive"
         data-armed={armed ? "true" : undefined}
+        aria-describedby={describedBy}
         onClick={onClick}
       />
       {armed ? <input type="hidden" name={CONFIRM_FIELD} value={CONFIRM_VALUE} /> : null}

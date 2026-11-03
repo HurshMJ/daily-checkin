@@ -102,6 +102,8 @@ npm run operator:setup-link -- <label>
 Prints `https://daily-checkin.hurshm05.workers.dev/setup/<token>`. Opening it
 lets one person create a login (username, password and avatar colour) without
 joining any Group; it is how the very first Member gets in.
+Opening it moves the token into a short-lived cookie (`__Host-setup`, one
+hour) and redirects to `/setup`, so no later URL or log line carries it.
 
 - The link works once and expires 1 hour after it is printed.
 - Rerunning the command with the same label cancels that label's older unused
@@ -153,6 +155,8 @@ from each Board on Tonight):
   shown again; the pending list names each Invite by its optional label ("Who
   is it for?", up to 40 characters, seen only by the Owner) or by when it was
   made, in UTC+4.
+- Opening the link moves its token into a short-lived cookie (`__Host-invite`,
+  one hour) and redirects to `/invite`, so no later URL or log line carries it.
 - Each Invite works **once** and **never expires**. The Owner can cancel a
   pending Invite; a used, cancelled or unknown link shows one warning, "This
   Invite has been used or cancelled."
@@ -169,6 +173,29 @@ Invites live in the `invites` table (migration 0005). Treat a pending link
 like a password: anyone holding it can join the Group until it is used or
 cancelled. The Invite and Group pages send `Referrer-Policy: no-referrer`, so
 the link never leaks to another site.
+
+## Group settings
+
+The Owner runs the Group from its page (`/groups/<id>`):
+
+- **Basics:** rename the Group (1 to 40 characters, like a new Group's name)
+  and set the Game On Threshold, a whole number from 1 to 99, with the − and +
+  buttons or by typing it.
+- **Members:** **Manage** on each other Member offers **Make Owner**, which
+  hands the Group over (pending Invites stay valid), and **Remove**.
+- **Owner actions:** **Delete Group** deletes the Group, its Board and its
+  night state for everyone. Each Member's Check-ins stay.
+
+Make Owner, Remove and Delete Group need a second tap within 4 seconds. Any
+other Member sees the page read-only and gets 403 for every Owner action.
+
+Any Member leaves a Group from the **Groups** card on their profile. The Owner
+cannot leave while other Members remain and is told to make another Member
+Owner first; an Owner who is the last Member deletes the Group by leaving.
+Nothing notifies anyone of these changes.
+
+Every threshold or membership change re-checks tonight's Game On in the same
+D1 batch. A Group that drops below its threshold after Game On reads Game Off.
 
 ## Tests
 

@@ -11,7 +11,7 @@ const PASSWORD = "correct horse battery";
 async function submitSetup(form: Record<string, string>) {
   const app = startApp();
   const token = await app.issueSetupLink();
-  const response = await app.device().post(`/setup/${token}`, form);
+  const response = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", form);
   return { app, response, html: response.status === 302 ? "" : await response.text() };
 }
 
@@ -72,11 +72,11 @@ describe("username rules", () => {
     await app.createLogin({ username: "alice", password: PASSWORD });
     const token = await app.issueSetupLink("second");
 
-    const taken = await app.device().post(`/setup/${token}`, { username: "Alice", password: PASSWORD, colour: "blue" });
+    const taken = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { username: "Alice", password: PASSWORD, colour: "blue" });
     expect(taken.status).toBe(400);
     expect(await taken.text()).toContain("That username is taken.");
 
-    const retry = await app.device().post(`/setup/${token}`, { username: "Bob", password: PASSWORD, colour: "blue" });
+    const retry = await (await app.deviceWithLink(`/setup/${token}`)).post("/setup", { username: "Bob", password: PASSWORD, colour: "blue" });
     expect(retry.status).toBe(302);
     expect(await usernames()).toEqual(["alice", "Bob"]);
   });
@@ -165,8 +165,8 @@ describe("stored secrets", () => {
   it("keeps only 64-character hex hashes of session and Setup Link tokens", async () => {
     const app = startApp();
     const token = await app.issueSetupLink();
-    const browser = app.device();
-    await browser.post(`/setup/${token}`, { username: "Alice", password: PASSWORD, colour: "blue" });
+    const browser = await app.deviceWithLink(`/setup/${token}`);
+    await browser.post("/setup", { username: "Alice", password: PASSWORD, colour: "blue" });
     const sessionToken = browser.cookies.get("__Host-session");
     expect(sessionToken).toBeTruthy();
 
