@@ -37,7 +37,13 @@ describe("Setup Link", () => {
     const page = await tonight.text();
     expect(page).toContain("Tonight");
     expect(page).toContain("Create a Group");
-    expect(page).toContain("Alice");
+    // The You pill wears the chosen colour and links to the profile, which names the Member.
+    expect(page).toMatch(/<a[^>]*href="\/profile"[^>]*>\s*<span[^>]*data-colour="violet"/);
+    // Tonight needs only the colour: the username stays out of its loader data.
+    expect(page).not.toContain("Alice");
+    const profile = await browser.get("/profile");
+    // React separates adjacent text nodes with <!-- --> markers; drop them to read the sentence.
+    expect((await profile.text()).replaceAll("<!-- -->", "")).toContain("Logged in as Alice.");
   });
 
   it("works only once", async () => {

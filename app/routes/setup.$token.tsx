@@ -4,6 +4,9 @@ import { AVATAR_COLOUR_NAMES, AVATAR_COLOURS } from "~/auth/palette";
 import { authFor, sessionCookie } from "~/auth/request";
 import { type NewLoginErrors, normaliseUsername, validateNewLogin } from "~/auth/rules";
 import { AvatarDot } from "~/components/avatar-dot";
+import { Notice } from "~/components/notice";
+import { OfflineBar } from "~/components/offline-bar";
+import { SubmitButton, useSubmitting } from "~/components/submit-button";
 
 import type { Route } from "./+types/setup.$token";
 
@@ -59,83 +62,95 @@ export async function action({ request, params, context }: Route.ActionArgs) {
 export default function SetupLink({ loaderData, actionData }: Route.ComponentProps) {
   const usable = actionData?.usable ?? loaderData?.usable ?? false;
   const errors = actionData?.errors ?? {};
+  const submitting = useSubmitting();
 
   if (!usable) {
     return (
-      <main className="page">
-        <header className="setup-header">
-          <h1>Create your login</h1>
-        </header>
-        <div className="notice-error" role="alert">
-          <p>{UNUSABLE_LINK_MESSAGE}</p>
-        </div>
-      </main>
+      <>
+        <OfflineBar />
+        <main className="page">
+          <header className="setup-header">
+            <h1>Create your login</h1>
+          </header>
+          <Notice tone="error" title="Can't use this link">
+            {UNUSABLE_LINK_MESSAGE}
+          </Notice>
+        </main>
+      </>
     );
   }
 
   return (
-    <main className="page">
-      <header className="setup-header">
-        <h1>Create your login</h1>
-        <p className="setup-note">This link works once and expires an hour after it was made.</p>
-      </header>
-      <Form method="post" className="page-form" noValidate>
-        <div className="field">
-          <label className="field-label" htmlFor="username">Username</label>
-          <input
-            className="field-input"
-            id="username"
-            name="username"
-            autoComplete="username"
-            required
-            defaultValue={actionData?.username}
-            aria-invalid={errors.username ? true : undefined}
-            aria-describedby="username-help"
-          />
-          <p id="username-help" className={errors.username ? "field-error" : "field-hint"}>
-            {errors.username ?? "3 to 32 characters. Spaces and symbols are fine."}
-          </p>
-        </div>
-        <div className="field">
-          <label className="field-label" htmlFor="password">Password</label>
-          <input
-            className="field-input"
-            id="password"
-            name="password"
-            type="password"
-            autoComplete="new-password"
-            required
-            aria-invalid={errors.password ? true : undefined}
-            aria-describedby="password-help"
-          />
-          <p id="password-help" className={errors.password ? "field-error" : "field-hint"}>
-            {errors.password ?? "12 to 128 characters. A phrase with spaces works well."}
-          </p>
-        </div>
-        <fieldset className="picker" aria-describedby={errors.colour ? "colour-error" : undefined}>
-          <legend className="picker-legend">Avatar colour</legend>
-          {AVATAR_COLOUR_NAMES.map((name) => (
-            <label key={name} className="picker-tile">
-              <input
-                className="picker-input"
-                type="radio"
-                name="colour"
-                value={name}
-                required
-                defaultChecked={actionData?.colour === name}
-              />
-              <AvatarDot colour={name} />
-              {AVATAR_COLOURS[name].label}
-            </label>
-          ))}
-          {errors.colour ? (
-            <p id="colour-error" className="field-error">
-              {errors.colour}
+    <>
+      <OfflineBar />
+      <main className="page">
+        <header className="setup-header">
+          <h1>Create your login</h1>
+          <p className="setup-note">This link works once and expires an hour after it was made.</p>
+        </header>
+        <Form method="post" className="page-form" noValidate>
+          <div className="field">
+            <label className="field-label" htmlFor="username">Username</label>
+            <input
+              className="field-input"
+              id="username"
+              name="username"
+              autoComplete="username"
+              required
+              defaultValue={actionData?.username}
+              aria-invalid={errors.username ? true : undefined}
+              aria-describedby="username-help"
+            />
+            <p id="username-help" className={errors.username ? "field-error" : "field-hint"}>
+              {errors.username ? `Error: ${errors.username}` : "3 to 32 characters. Spaces and symbols are fine."}
             </p>
-          ) : null}
-        </fieldset>
-        <button className="btn-primary" type="submit">Create login</button>
-      </Form>
-    </main>
+          </div>
+          <div className="field">
+            <label className="field-label" htmlFor="password">Password</label>
+            <input
+              className="field-input"
+              id="password"
+              name="password"
+              type="password"
+              autoComplete="new-password"
+              required
+              aria-invalid={errors.password ? true : undefined}
+              aria-describedby="password-help"
+            />
+            <p id="password-help" className={errors.password ? "field-error" : "field-hint"}>
+              {errors.password ? `Error: ${errors.password}` : "12 to 128 characters. A phrase with spaces works well."}
+            </p>
+          </div>
+          <fieldset className="picker" aria-describedby={errors.colour ? "colour-error" : undefined}>
+            <legend className="picker-legend">Avatar colour</legend>
+            {AVATAR_COLOUR_NAMES.map((name) => (
+              <label key={name} className="picker-tile">
+                <input
+                  className="picker-input"
+                  type="radio"
+                  name="colour"
+                  value={name}
+                  required
+                  defaultChecked={actionData?.colour === name}
+                />
+                <AvatarDot colour={name} />
+                {AVATAR_COLOURS[name].label}
+              </label>
+            ))}
+            {errors.colour ? (
+              <p id="colour-error" className="field-error">
+                {`Error: ${errors.colour}`}
+              </p>
+            ) : null}
+          </fieldset>
+          <SubmitButton
+            pending={submitting}
+            label="Create login"
+            pendingLabel="Creating login…"
+            className="btn-primary"
+          />
+        </Form>
+      </main>
+    </>
   );
 }

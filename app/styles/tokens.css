@@ -66,4 +66,5 @@
 
   /* Motion */
   --duration: 150ms;
+  --duration-ring: 800ms; /* one turn of the pending ring */
 }

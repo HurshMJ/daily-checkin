@@ -1,0 +1,210 @@
+import { createElement } from "react";
+import { renderToString } from "react-dom/server";
+import { describe, expect, it } from "vitest";
+
+import { Notice } from "~/components/notice";
+import { OfflineStatus } from "~/components/offline-bar";
+import { SubmitButton } from "~/components/submit-button";
+
+import { startApp } from "./harness";
+
+const OFFLINE_COPY = "Offline. Answers won&#x27;t save until you&#x27;re back online.";
+
+function bodyOf(html: string): string {
+  return html.slice(html.indexOf("<body"), html.indexOf("</body>"));
+}
+
+/** The opening tag of the element with this id. */
+function tagWithId(html: string, id: string): string {
+  const match = html.match(new RegExp(`<[a-z]+\\s[^>]*id="${id}"[^>]*>`));
+  expect(match, `element #${id}`).not.toBeNull();
+  return match![0];
+}
+
+/** The text of the element with this id, with React's text-node markers dropped. */
+function textOfId(html: string, id: string): string {
+  const match = html.match(new RegExp(`<([a-z]+)\\s[^>]*id="${id}"[^>]*>([\\s\\S]*?)</\\1>`));
+  expect(match, `element #${id}`).not.toBeNull();
+  return match![2].replaceAll("<!-- -->", "");
+}
+
+/** The opening tag of the submit button whose text is `label`. */
+function submitButton(html: string, label: string): string {
+  const match = html.match(new RegExp(`(<button[^>]*type="submit"[^>]*>)${label}</button>`));
+  expect(match, `${label} button`).not.toBeNull();
+  return match![1];
+}
+
+const alice = { username: "Alice", password: "correct horse battery", colour: "violet" };
+
+describe("field errors", () => {
+  it("marks a too-short username invalid and points it at an Error: line", async () => {
+    const app = startApp();
+    const token = await app.issueSetupLink();
+    const response = await app.device().post(`/setup/${token}`, { ...alice, username: "Al" });
+    const html = bodyOf(await response.text());
+
+    expect(response.status).toBe(400);
+    const input = tagWithId(html, "username");
+    expect(input).toContain('aria-invalid="true"');
+    expect(input).toContain('aria-describedby="username-help"');
+    expect(tagWithId(html, "username-help")).toContain('class="field-error"');
+    expect(textOfId(html, "username-help")).toBe("Error: Use 3 to 32 characters.");
+    // The other fields stay valid and keep their hints.
+    expect(tagWithId(html, "password")).not.toContain("aria-invalid");
+    expect(textOfId(html, "password-help")).not.toMatch(/^Error: /);
+  });
+
+  it("marks a too-short password invalid and points it at an Error: line", async () => {
+    const app = startApp();
+    const token = await app.issueSetupLink();
+    const response = await app.device().post(`/setup/${token}`, { ...alice, password: "short" });
+    const html = bodyOf(await response.text());
+
+    expect(response.status).toBe(400);
+    expect(tagWithId(html, "password")).toContain('aria-invalid="true"');
+    expect(textOfId(html, "password-help")).toBe("Error: Use 12 to 128 characters.");
+  });
+
+  it("points the colour picker at an Error: line when no colour is chosen", async () => {
+    const app = startApp();
+    const token = await app.issueSetupLink();
+    const response = await app.device().post(`/setup/${token}`, { username: "Alice", password: alice.password });
+    const html = bodyOf(await response.text());
+
+    expect(response.status).toBe(400);
+    expect(html).toMatch(/<fieldset[^>]*aria-describedby="colour-error"[^>]*>/);
+    expect(tagWithId(html, "colour-error")).toContain('class="field-error"');
+    expect(textOfId(html, "colour-error")).toBe("Error: Choose a colour.");
+  });
+
+  it("shows no Error: line on a fresh form", async () => {
+    const app = startApp();
+    const token = await app.issueSetupLink();
+    const html = bodyOf(await (await app.fetch(`/setup/${token}`)).text());
+
+    expect(html).not.toContain("Error: ");
+    expect(html).not.toContain("aria-invalid");
+  });
+});
+
+describe("form errors", () => {
+  it("shows a failed login as an alert notice with its title and message", async () => {
+    const response = await startApp().device().post("/login", { username: "nobody", password: "wrong password!" });
+    const html = bodyOf(await response.text());
+
+    expect(response.status).toBe(401);
+    expect(html).toMatch(
+      /<div class="notice-error" role="alert"><p class="notice-title">Can&#x27;t log in<\/p><p>That username and password do not match.<\/p><\/div>/,
+    );
+    // A login failure is form-wide: no field is marked.
+    expect(html).not.toContain("aria-invalid");
+  });
+});
+
+describe("idle forms", () => {
+  async function pages() {
+    const app = startApp();
+    const token = await app.issueSetupLink();
+    const browser = await app.createLogin({ username: "Alice", password: alice.password });
+    return {
+      login: await (await app.fetch("/login")).text(),
+      setup: await (await app.fetch(`/setup/${token}`)).text(),
+      unusable: await (await app.fetch("/setup/not-a-real-token")).text(),
+      tonight: await (await browser.get("/")).text(),
+      profile: await (await browser.get("/profile")).text(),
+    };
+  }
+
+  it("renders every submit button idle, with its label and no busy state", async () => {
+    const { login, setup, profile } = await pages();
+
+    for (const [html, label] of [
+      [login, "Log in"],
+      [setup, "Create login"],
+      [profile, "Log out"],
+      [profile, "Log out everywhere"],
+    ]) {
+      const button = submitButton(html, label);
+      expect(button, label).not.toContain("aria-busy");
+      expect(button, label).not.toContain("aria-disabled");
+    }
+    expect(submitButton(profile, "Log out")).toContain('class="btn-secondary"');
+    expect(submitButton(profile, "Log out everywhere")).toContain('class="btn-destructive"');
+    for (const html of [login, setup, profile]) expect(html).not.toContain("btn-ring");
+  });
+
+  it("renders no Offline bar on the server, and no inline styles", async () => {
+    for (const [name, html] of Object.entries(await pages())) {
+      expect(html, name).not.toContain("Offline");
+      expect(html, name).not.toMatch(/\sstyle=/);
+      // The empty live region is there, so the bar is announced when it appears.
+      expect(bodyOf(html), name).toContain('<div class="offline-status" role="status"></div>');
+    }
+  });
+});
+
+describe("SubmitButton", () => {
+  const props = { label: "Log in", pendingLabel: "Logging in…", className: "btn-primary" };
+
+  it("shows its label when idle", () => {
+    const html = renderToString(createElement(SubmitButton, { ...props, pending: false }));
+
+    expect(html).toBe('<button type="submit" class="btn-primary">Log in</button>');
+  });
+
+  it("shows the ring and the …ing label while pending, busy and disabled for taps", () => {
+    const html = renderToString(createElement(SubmitButton, { ...props, pending: true }));
+
+    expect(html).toMatch(/^<button type="submit" class="btn-primary"[^>]*>/);
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain('aria-disabled="true"');
+    // Pending is not disabled: the button keeps focus and its fill.
+    expect(html).not.toMatch(/\sdisabled=/);
+    expect(html).toContain('<span class="btn-ring" aria-hidden="true"></span>');
+    expect(html).toContain("Logging in…");
+    expect(html).not.toContain(">Log in<");
+  });
+});
+
+describe("Notice", () => {
+  it("renders an error as an alert with a title and a body", () => {
+    const html = renderToString(createElement(Notice, { tone: "error", title: "Can't save", children: "Try once more." }));
+
+    expect(html).toBe(
+      '<div class="notice-error" role="alert"><p class="notice-title">Can&#x27;t save</p><p>Try once more.</p></div>',
+    );
+  });
+
+  it("adds a Try again button when it can retry", () => {
+    const retry = () => {};
+    const html = renderToString(
+      createElement(Notice, { tone: "error", title: "Can't save", retry, children: "Your answer did not save." }),
+    );
+
+    expect(html).toContain('<button type="button" class="btn-secondary">Try again</button>');
+  });
+
+  it("is not an alert for information or a warning", () => {
+    for (const tone of ["info", "warning"] as const) {
+      const html = renderToString(createElement(Notice, { tone, title: "Heads up", children: "Body." }));
+      expect(html).toMatch(new RegExp(`^<div class="notice-${tone}">`));
+      expect(html).not.toContain("role=");
+      expect(html).not.toContain("Try again");
+    }
+  });
+});
+
+describe("OfflineStatus", () => {
+  it("is an empty live region while online", () => {
+    expect(renderToString(createElement(OfflineStatus, { offline: false }))).toBe(
+      '<div class="offline-status" role="status"></div>',
+    );
+  });
+
+  it("shows the Offline bar while offline", () => {
+    expect(renderToString(createElement(OfflineStatus, { offline: true }))).toBe(
+      `<div class="offline-status" role="status"><p class="offline-bar">${OFFLINE_COPY}</p></div>`,
+    );
+  });
+});
