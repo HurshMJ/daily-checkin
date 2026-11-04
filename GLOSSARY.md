@@ -18,6 +18,10 @@ _Avoid_: User, player, account
 An optional name a Member chooses to be shown by instead of their username. Logging in still uses the username.
 _Avoid_: Nickname, alias, handle
 
+**Shown name**:
+The name the app shows for a Member on Boards, in History, on the Group page and in notifications: their Display Name if set, otherwise their username. It is resolved from the login when read, so a rename also changes past nights.
+_Avoid_: Nickname, label, visible name
+
 **Owner**:
 The one Member of a Group who invites or removes Members and sets the Game On Threshold. The creator starts as Owner and can hand ownership to another Member.
 _Avoid_: Admin, leader, host
