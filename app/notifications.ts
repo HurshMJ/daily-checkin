@@ -1,3 +1,4 @@
+import { type MemberNames, shownName } from "~/auth/rules";
 import { type Availability, AVAILABILITY_LABELS, sortRows } from "~/checkins";
 import { gameNightOf, zoneHour } from "~/game-night";
 import type { EventType, NotificationType } from "~/push";
@@ -132,7 +133,7 @@ function yesWord(count: number): string {
 
 /**
  * The payload for each event. Names are read at send time; the Member is
- * named by username until ticket 24 adds Display Names.
+ * named by their Shown name.
  */
 export function payloadFor(
   event: NotificationEvent,
@@ -175,7 +176,7 @@ function reminderPayload(night: string): Payload {
 
 /** One current Member of a Group as the Daily Summary lists them: no answer yet is null. */
 interface SummaryRow {
-  username: string;
+  shownName: string;
   availability: Availability | null;
 }
 
@@ -192,8 +193,8 @@ function summaryBody(sorted: readonly SummaryRow[], shown: number): string {
   const lines: string[] = [];
   let previous: Availability | null | undefined;
   for (const row of sorted.slice(0, shown)) {
-    if (row.availability === previous) lines[lines.length - 1] += `, ${row.username}`;
-    else lines.push(`${summaryLabel(row.availability)}: ${row.username}`);
+    if (row.availability === previous) lines[lines.length - 1] += `, ${row.shownName}`;
+    else lines.push(`${summaryLabel(row.availability)}: ${row.shownName}`);
     previous = row.availability;
   }
   const rest = sorted.length - shown;
@@ -204,7 +205,7 @@ function summaryBody(sorted: readonly SummaryRow[], shown: number): string {
  * The Daily Summary of one Group: the counts in the title and every current
  * Member named by Availability in Board order, without Notes. When the whole
  * list would not fit in a push, it names as many Members as fit and ends with
- * "+N more". Names are usernames until ticket 24 adds Display Names.
+ * "+N more". Members are named by their Shown name.
  */
 function dailySummaryPayload(group: { id: number; name: string }, night: string, rows: readonly SummaryRow[]): Payload {
   const sorted = sortRows(rows);
@@ -336,7 +337,7 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
     const groupId = "groupId" in event ? event.groupId : null;
     const [recipients, ...binds] = RECIPIENTS[event.type](groupId ?? 0, night);
     const [actor, group, subscriptions] = await db.batch<Record<string, unknown>>([
-      db.prepare("SELECT username FROM members WHERE id = ?1").bind(actorId),
+      db.prepare("SELECT username, display_name AS displayName FROM members WHERE id = ?1").bind(actorId),
       db
         .prepare(
           `SELECT g.name, g.threshold,
@@ -354,7 +355,8 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
     const groupRow = group.results[0] as { name: string; threshold: number; yes: number } | undefined;
     if (rows.length === 0 || (groupId !== null && !groupRow)) return;
 
-    const actorName = (actor.results[0] as { username: string } | undefined)?.username ?? "Someone";
+    const actorRow = actor.results[0] as unknown as MemberNames | undefined;
+    const actorName = actorRow ? shownName(actorRow) : "Someone";
     await deliver(event.type, rows, encodePayload(payloadFor(event, { actorName, actorId, night, group: groupRow })));
   }
 
@@ -375,7 +377,7 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
   async function sendDailySummaries(night: string): Promise<void> {
     const { results: members } = await db
       .prepare(
-        `SELECT g.id, g.name, p.username, c.availability
+        `SELECT g.id, g.name, p.username, p.display_name AS displayName, c.availability
          FROM groups g
          JOIN memberships m ON m.group_id = g.id
          JOIN members p ON p.id = m.member_id
@@ -384,11 +386,11 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
                         JOIN checkins ac ON ac.member_id = a.member_id AND ac.game_night = ?1)`,
       )
       .bind(night)
-      .all<{ id: number; name: string } & SummaryRow>();
+      .all<{ id: number; name: string; availability: Availability | null } & MemberNames>();
     const groups = new Map<number, { id: number; name: string; rows: SummaryRow[] }>();
-    for (const { id, name, username, availability } of members) {
-      if (!groups.has(id)) groups.set(id, { id, name, rows: [] });
-      groups.get(id)!.rows.push({ username, availability });
+    for (const row of members) {
+      if (!groups.has(row.id)) groups.set(row.id, { id: row.id, name: row.name, rows: [] });
+      groups.get(row.id)!.rows.push({ shownName: shownName(row), availability: row.availability });
     }
     if (groups.size === 0) return;
 

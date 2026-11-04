@@ -1,4 +1,5 @@
 import { hashToken, randomToken } from "~/auth/crypto";
+import { shownName } from "~/auth/rules";
 import { gameOnStatement, memberGameClaims } from "~/checkins";
 import { gameNightOf } from "~/game-night";
 import { batchWithClaims, createNotifications, type Delivery } from "~/notifications";
@@ -143,26 +144,26 @@ export function createInvites({ env, clock, ...delivery }: { env: Env; clock: Cl
 
   /**
    * What the Invite page shows for a token. The inviter is named by their
-   * username until ticket 24 adds Display Names, read at view time so a
-   * rename shows at once.
+   * Shown name, read at view time so a rename shows at once.
    */
   async function inviteFor(token: string, viewerId: number | null = null): Promise<InviteView> {
     const row = await db
       .prepare(
-        `SELECT g.id, g.name, p.username AS inviter,
+        `SELECT g.id, g.name, p.username, p.display_name AS displayName,
                 EXISTS (SELECT 1 FROM memberships m WHERE m.group_id = g.id AND m.member_id = ?2) AS already
          FROM invites i JOIN groups g ON g.id = i.group_id
          LEFT JOIN members p ON p.id = i.created_by
          WHERE i.token_hash = ?1 AND ${usable("i")}`,
       )
       .bind(await hashToken(token), viewerId)
-      .first<{ id: number; name: string; inviter: string | null; already: number }>();
+      .first<{ id: number; name: string; username: string | null; displayName: string | null; already: number }>();
     if (!row) return { usable: false };
     return {
       usable: true,
       groupId: row.id,
       groupName: row.name,
-      inviterName: row.inviter,
+      // A deleted inviter leaves no Member row, so no name.
+      inviterName: row.username === null ? null : shownName({ username: row.username, displayName: row.displayName }),
       alreadyMember: row.already === 1,
     };
   }

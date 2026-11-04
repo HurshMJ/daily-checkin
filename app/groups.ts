@@ -1,4 +1,5 @@
 import type { AvatarColour } from "~/auth/palette";
+import { type MemberNames, shownName } from "~/auth/rules";
 import { groupGameClaims, groupGameOnStatement } from "~/checkins";
 import { gameNightOf } from "~/game-night";
 import { batchWithClaims, createNotifications, type Delivery } from "~/notifications";
@@ -60,8 +61,8 @@ export interface GroupView {
   name: string;
   threshold: number;
   ownerId: number;
-  /** Every Member, in the order they joined. */
-  members: { id: number; username: string; colour: AvatarColour }[];
+  /** Every Member, in the order they joined, with their Shown name. */
+  members: { id: number; shownName: string; username: string; colour: AvatarColour }[];
 }
 
 /** One of the Member's Groups as the profile lists it, for leaving. */
@@ -173,7 +174,8 @@ export function createGroups({ env, clock, ...delivery }: { env: Env; clock: Clo
           .bind(groupId, memberId),
         db
           .prepare(
-            `SELECT p.id, p.username, p.colour FROM memberships m JOIN members p ON p.id = m.member_id
+            `SELECT p.id, p.username, p.display_name AS displayName, p.colour
+             FROM memberships m JOIN members p ON p.id = m.member_id
              WHERE m.group_id = ?1 AND EXISTS (SELECT 1 FROM memberships mine WHERE mine.group_id = ?1 AND mine.member_id = ?2)
              ORDER BY m.joined_at, p.id`,
           )
@@ -186,7 +188,9 @@ export function createGroups({ env, clock, ...delivery }: { env: Env; clock: Clo
         name: row.name,
         threshold: row.threshold,
         ownerId: row.owner_id,
-        members: members.results as GroupView["members"],
+        members: (members.results as unknown as (MemberNames & { id: number; colour: AvatarColour })[]).map(
+          (member) => ({ id: member.id, shownName: shownName(member), username: member.username, colour: member.colour }),
+        ),
       };
     },
 

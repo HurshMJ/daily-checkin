@@ -42,7 +42,7 @@ function boards(body: string) {
     rows: [...inner.matchAll(/<li class="board-row" data-availability="([^"]*)">([\s\S]*?)<\/li>/g)].map(
       ([, availability, row]) => ({
         availability,
-        name: row.match(/<span class="board-row-name">([^<]*)<\/span>/)![1],
+        name: row.match(/class="board-row-name">([^<]*)</)![1],
         answer: row.match(/<span class="board-row-answer">([^<]*)<\/span>/)![1],
         note: row.match(/<p class="board-row-note">([^<]*)<\/p>/)?.[1] ?? null,
       }),
@@ -177,6 +177,37 @@ describe("Tonight with a Group", () => {
       ["Dan", "none", "No answer yet"],
     ]);
     expect(board.nobody).toBe(false);
+  });
+
+  it("shows each row's dot and Shown name, reveals @username without JavaScript, and orders by Shown name", async () => {
+    const { app, alice, friday } = await aliceWithGroup();
+    const bob = await app.createLogin({ username: "Bob", password: PASSWORD, colour: "pink" });
+    await app.createLogin({ username: "Carol", password: PASSWORD, colour: "sky" });
+    await join(friday, "Bob");
+    await join(friday, "Carol");
+
+    let [board] = boards(bodyOf(await (await alice.get("/")).text()));
+    expect(board.rows.map((row) => row.name)).toEqual(["You", "Bob", "Carol"]);
+
+    await bob.post("/profile", { intent: "names", username: "Bob", displayName: "Zed 🎲", colour: "pink" });
+    const body = bodyOf(await (await alice.get("/")).text());
+    [board] = boards(body);
+
+    expect(board.rows.map((row) => row.name)).toEqual(["You", "Carol", "Zed 🎲"]);
+    const rows = [...body.matchAll(/<li class="board-row"[^>]*>([\s\S]*?)<\/li>/g)].map(([, row]) => row);
+    expect(rows.map((row) => row.match(/^<div class="board-row-who"><span class="avatar-dot" data-colour="([a-z]+)"/)?.[1])).toEqual([
+      "violet",
+      "sky",
+      "pink",
+    ]);
+    expect(rows[0]).toContain('<span class="board-row-name">You</span>');
+    expect(rows[0]).not.toContain("<details");
+    expect(rows[2]).toContain(
+      '<details class="board-row-reveal"><summary class="board-row-name">Zed 🎲</summary><span class="board-row-username">@Bob</span></details>',
+    );
+    expect(rows[1]).toContain(
+      '<details class="board-row-reveal"><summary class="board-row-name">Carol</summary><span class="board-row-username">@Carol</span></details>',
+    );
   });
 
   it("moves the pill from Needs to Game On to Game Off, and leaves an unrelated Group alone", async () => {

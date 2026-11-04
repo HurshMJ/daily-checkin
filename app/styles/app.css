@@ -738,8 +738,43 @@ input {
   background: transparent;
 }
 
+/* A row's dot, name and left marker; the name reveals @username when tapped. */
+.board-row-who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  column-gap: 0.5rem;
+  min-width: 0;
+}
+
+.board-row-who > .avatar-dot {
+  flex: none;
+  align-self: center;
+}
+
 .board-row-name {
   font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.board-row-reveal {
+  min-width: 0;
+}
+
+.board-row-reveal > summary {
+  list-style: none;
+  cursor: pointer;
+}
+
+.board-row-reveal > summary::-webkit-details-marker {
+  display: none;
+}
+
+.board-row-username {
+  display: block;
+  color: var(--text-secondary);
+  font-size: var(--size-secondary);
+  overflow-wrap: anywhere;
 }
 
 .board-row-answer {

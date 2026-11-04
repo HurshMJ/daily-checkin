@@ -2,6 +2,8 @@ import { Link } from "react-router";
 
 import { AVAILABILITY_LABELS, type Board as BoardData, type BoardRow } from "~/checkins";
 
+import { AvatarDot } from "./avatar-dot";
+
 export const NO_ANSWER = "No answer yet";
 export const NOBODY_ANSWERED = "Nobody has answered yet tonight.";
 
@@ -42,9 +44,11 @@ export function Board({ board, viewerId }: { board: BoardData; viewerId: number 
 }
 
 /**
- * A Board's rows, already in Board order, tonight's or a past night's. The
- * viewer's own row reads "You"; a row without a Check-in reads `noAnswer`;
- * a row marked `left` names a Member who has since left the Group.
+ * A Board's rows, already in Board order, tonight's or a past night's. Each
+ * row starts with the Member's avatar dot. The viewer's own row reads "You";
+ * every other row shows the Shown name as a disclosure that reveals
+ * "@username" when tapped, with no JavaScript. A row without a Check-in reads
+ * `noAnswer`; a row marked `left` names a Member who has since left the Group.
  */
 export function BoardRows({
   rows,
@@ -59,10 +63,18 @@ export function BoardRows({
     <ul className="board-rows">
       {rows.map((row) => (
         <li key={row.memberId} className="board-row" data-availability={row.availability ?? "none"}>
-          <span className="board-row-name">
-            {row.memberId === viewerId ? "You" : row.username}
+          <div className="board-row-who">
+            <AvatarDot colour={row.colour} />
+            {row.memberId === viewerId ? (
+              <span className="board-row-name">You</span>
+            ) : (
+              <details className="board-row-reveal">
+                <summary className="board-row-name">{row.shownName}</summary>
+                <span className="board-row-username">@{row.username}</span>
+              </details>
+            )}
             {row.left ? <span className="board-row-left"> (left the Group)</span> : null}
-          </span>
+          </div>
           <span className="board-row-answer">{row.availability ? AVAILABILITY_LABELS[row.availability] : noAnswer}</span>
           {row.note ? <p className="board-row-note">{row.note}</p> : null}
         </li>
