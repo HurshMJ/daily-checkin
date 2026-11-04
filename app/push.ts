@@ -75,28 +75,34 @@ export function createPush({ env, clock }: { env: Env; clock: Clock }) {
   return {
     /**
      * Stores the device's subscription for the Member and the session that
-     * turned push on. An endpoint that is already stored moves to this Member
-     * and session, so a shared device only ever reaches whoever turned it on
-     * last.
+     * turned push on. A session holds at most one subscription, so a new
+     * endpoint replaces the session's old one. An endpoint that is already
+     * stored moves to this Member and session, so a shared device only ever
+     * reaches whoever turned it on last. Both statements run in one D1 batch,
+     * so a failure cannot leave the session with no subscription.
      */
     async saveSubscription(memberId: number, sessionTokenHash: string, subscription: PushSubscription): Promise<void> {
-      await db
-        .prepare(
-          `INSERT INTO push_subscriptions (endpoint, member_id, session_token_hash, p256dh, auth, created_at)
-           VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-           ON CONFLICT (endpoint) DO UPDATE SET member_id = excluded.member_id,
-             session_token_hash = excluded.session_token_hash, p256dh = excluded.p256dh,
-             auth = excluded.auth, created_at = excluded.created_at`,
-        )
-        .bind(
-          subscription.endpoint,
-          memberId,
-          sessionTokenHash,
-          subscription.keys.p256dh,
-          subscription.keys.auth,
-          clock.now().toISOString(),
-        )
-        .run();
+      await db.batch([
+        db
+          .prepare("DELETE FROM push_subscriptions WHERE session_token_hash = ?1 AND endpoint <> ?2")
+          .bind(sessionTokenHash, subscription.endpoint),
+        db
+          .prepare(
+            `INSERT INTO push_subscriptions (endpoint, member_id, session_token_hash, p256dh, auth, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+             ON CONFLICT (endpoint) DO UPDATE SET member_id = excluded.member_id,
+               session_token_hash = excluded.session_token_hash, p256dh = excluded.p256dh,
+               auth = excluded.auth, created_at = excluded.created_at`,
+          )
+          .bind(
+            subscription.endpoint,
+            memberId,
+            sessionTokenHash,
+            subscription.keys.p256dh,
+            subscription.keys.auth,
+            clock.now().toISOString(),
+          ),
+      ]);
     },
 
     /** Deletes one of the Member's own subscriptions: Turn off on this device. */
