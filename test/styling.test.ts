@@ -181,7 +181,9 @@ describe("styled Tonight and profile", () => {
 
     expect(html).not.toMatch(/\sstyle=/);
     expect(body).toContain('<span class="avatar-dot avatar-dot-large" data-colour="pink" aria-hidden="true"></span>');
-    expect(avatarDots(body)).toEqual(["pink"]);
+    // The header holds one dot; the name and colour card's picker holds one per colour.
+    const header = body.match(/<header class="profile-header">([\s\S]*?)<\/header>/)![1];
+    expect(avatarDots(header)).toEqual(["pink"]);
     expect(body).toMatch(/<h1[^>]*>Alice<\/h1><p class="profile-username">@Alice<\/p>/);
     expect(body).not.toContain("Logged in as");
 

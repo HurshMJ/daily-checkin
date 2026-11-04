@@ -129,6 +129,7 @@ describe("idle forms", () => {
     for (const [html, label] of [
       [login, "Log in"],
       [setup, "Create login"],
+      [profile, "Save"],
       [profile, "Log out"],
       [profile, "Log out everywhere"],
     ]) {
@@ -136,6 +137,7 @@ describe("idle forms", () => {
       expect(button, label).not.toContain("aria-busy");
       expect(button, label).not.toContain("aria-disabled");
     }
+    expect(submitButton(profile, "Save")).toContain('class="btn-primary"');
     expect(submitButton(profile, "Log out")).toContain('class="btn-secondary"');
     expect(submitButton(profile, "Log out everywhere")).toContain('class="btn-destructive"');
     for (const html of [login, setup, profile]) expect(html).not.toContain("btn-ring");
