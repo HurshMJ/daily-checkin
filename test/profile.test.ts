@@ -220,8 +220,38 @@ describe("the Notifications card on the profile", () => {
 });
 
 describe("the service worker in public/sw.js", () => {
+  /** An open window of the app as `clients.matchAll` returns it. */
+  interface FakeWindow {
+    url: string;
+    focus(): Promise<FakeWindow>;
+    navigate(url: string): Promise<FakeWindow | null>;
+  }
+
+  /**
+   * A fake open window at `url`. A controlled window navigates; an
+   * uncontrolled one cannot, so its navigate rejects, as browsers do.
+   */
+  function fakeWindow(url: string, { controlled }: { controlled: boolean }) {
+    const visited: string[] = [];
+    const window: FakeWindow & { visited: string[]; focused: number } = {
+      url,
+      visited,
+      focused: 0,
+      async focus() {
+        window.focused += 1;
+        return window;
+      },
+      async navigate(to: string) {
+        if (!controlled) throw new TypeError("This service worker is not the client's active service worker.");
+        visited.push(to);
+        return window;
+      },
+    };
+    return window;
+  }
+
   /** Runs the script against a fake service worker global and returns its handlers and what they did. */
-  function load() {
+  function load(windows: FakeWindow[] = []) {
     const handlers: Record<string, (event: unknown) => void> = {};
     const shown: { title: string; options: Record<string, unknown> }[] = [];
     const opened: string[] = [];
@@ -237,7 +267,7 @@ describe("the service worker in public/sw.js", () => {
         },
       },
       clients: {
-        matchAll: async () => [],
+        matchAll: async () => windows,
         openWindow: async (url: string) => {
           opened.push(url);
         },
@@ -273,5 +303,38 @@ describe("the service worker in public/sw.js", () => {
     await sw.click("/groups/1");
     await sw.click("https://evil.example/");
     expect(sw.opened).toEqual(["https://daily-checkin.test/groups/1", "https://daily-checkin.test/"]);
+  });
+
+  it("navigates an open window of the app it controls to the page, opening no other window", async () => {
+    const open = fakeWindow("https://daily-checkin.test/profile", { controlled: true });
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    expect(open.focused).toBe(1);
+    expect(open.visited).toEqual(["https://daily-checkin.test/groups/1"]);
+    expect(sw.opened).toEqual([]);
+  });
+
+  it("opens the page in a new window when the open window is not controlled and cannot navigate", async () => {
+    const open = fakeWindow("https://daily-checkin.test/profile", { controlled: false });
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    await sw.click("https://evil.example/");
+    expect(sw.opened).toEqual(["https://daily-checkin.test/groups/1", "https://daily-checkin.test/"]);
+  });
+
+  it("opens the page in a new window when navigate gives no window back", async () => {
+    const open = fakeWindow("https://daily-checkin.test/profile", { controlled: true });
+    open.navigate = async () => null;
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    expect(sw.opened).toEqual(["https://daily-checkin.test/groups/1"]);
+  });
+
+  it("only focuses a window already on the page", async () => {
+    const open = fakeWindow("https://daily-checkin.test/groups/1", { controlled: false });
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    expect(open.focused).toBe(1);
+    expect(sw.opened).toEqual([]);
   });
 });
