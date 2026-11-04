@@ -1,14 +1,17 @@
 import { data, Form, redirect, useNavigation } from "react-router";
 
+import { hashToken } from "~/auth/crypto";
 import { clientIp } from "~/auth/login-limits";
 import { authFor, currentSession, requireMember } from "~/auth/request";
 import { AvatarDot } from "~/components/avatar-dot";
 import { FieldError } from "~/components/field-error";
+import { NotificationsCard, NOTIFICATIONS_INTENT, togglesFrom } from "~/components/notification-settings";
 import { Notice } from "~/components/notice";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
 import { CONFIRM_FIELD, isConfirmed, TapAgainButton } from "~/components/tap-again-button";
 import { TopBar } from "~/components/top-bar";
 import { createGroups, type MembershipView } from "~/groups";
+import { createPush } from "~/push";
 import { appContext } from "~/services";
 
 import type { Route } from "./+types/profile";
@@ -22,32 +25,55 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader({ request, context }: Route.LoaderArgs) {
   const { id, username, colour } = requireMember(context);
+  const app = context.get(appContext);
   const search = new URL(request.url).searchParams;
   // Log out everywhere sends a first tap made without JavaScript back here, armed.
   const armLogoutEverywhere = search.get(CONFIRM_FIELD) === "logout-everywhere";
-  const groups = await createGroups(context.get(appContext)).membershipsFor(id);
+  const push = createPush(app);
+  const [groups, prefs, pushOnHere] = await Promise.all([
+    createGroups(app).membershipsFor(id),
+    push.prefsFor(id),
+    push.sessionHasSubscription(await hashToken(currentSession(context)!.token)),
+  ]);
   // Leaving a Group lands back here with the Group's name for the status line.
   const left = search.get("left");
-  return { username, colour, armLogoutEverywhere, groups, left: left ? { name: left, deleted: search.has("deleted") } : null };
+  return {
+    username,
+    colour,
+    armLogoutEverywhere,
+    groups,
+    left: left ? { name: left, deleted: search.has("deleted") } : null,
+    notifications: {
+      publicKey: app.env.VAPID_PUBLIC_KEY,
+      onHere: pushOnHere,
+      prefs: { said_yes: prefs.said_yes, game_on: prefs.game_on, game_off: prefs.game_off },
+    },
+  };
 }
 
 type PasswordErrors = Partial<Record<"currentPassword" | "newPassword", string>>;
 
 /**
- * Change password, or leave a Group when the intent field is "leave". Typed
- * passwords are never sent back to the page. Leaving acts only when the
- * tap-again button confirmed it; an unconfirmed post returns the page with
- * that Group's Leave button armed.
+ * Change password, leave a Group when the intent field is "leave", or save
+ * the notification toggles when it is "notifications". Typed passwords are
+ * never sent back to the page. Leaving acts only when the tap-again button
+ * confirmed it; an unconfirmed post returns the page with that Group's Leave
+ * button armed.
  */
 export async function action({ request, context }: Route.ActionArgs) {
   const member = requireMember(context);
   const token = currentSession(context)?.token ?? "";
   const form = await request.formData();
 
+  if (form.get("intent") === NOTIFICATIONS_INTENT) {
+    await createPush(context.get(appContext)).setPrefs(member.id, togglesFrom(form));
+    return { errors: {} as PasswordErrors, changedAt: null, armedLeave: null, notificationsSaved: true };
+  }
+
   if (form.get("intent") === "leave") {
     const groupId = Number(form.get("groupId"));
     if (!Number.isSafeInteger(groupId)) return refused({}, 400);
-    if (!isConfirmed(form)) return { errors: {} as PasswordErrors, changedAt: null, armedLeave: groupId };
+    if (!isConfirmed(form)) return { errors: {} as PasswordErrors, changedAt: null, armedLeave: groupId, notificationsSaved: false };
     const groups = createGroups(context.get(appContext));
     const name = (await groups.membershipsFor(member.id)).find((group) => group.groupId === groupId)?.name;
     const left = await groups.leave(member.id, groupId);
@@ -70,6 +96,7 @@ export async function action({ request, context }: Route.ActionArgs) {
       errors: {} as PasswordErrors,
       changedAt: context.get(appContext).clock.now().toISOString(),
       armedLeave: null,
+      notificationsSaved: false,
     };
   }
   if (result.reason === "new-password") return refused({ newPassword: result.message }, 400);
@@ -81,13 +108,17 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 /** A refused post: the password errors, if any, with nothing changed. */
 function refused(errors: PasswordErrors, status: number) {
-  return data({ errors, changedAt: null, armedLeave: null }, { status });
+  return data({ errors, changedAt: null, armedLeave: null, notificationsSaved: false }, { status });
 }
 
 export default function Profile({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
-  // The Groups card's Leave forms post here too; only the password form's own post pends it.
-  const changingPassword = useSubmitting() && navigation.formData?.get("intent") !== "leave";
+  // The Groups card's Leave forms and the Notifications form post here too;
+  // each button pends only for its own form's post.
+  const submitting = useSubmitting();
+  const intent = navigation.formData?.get("intent");
+  const changingPassword = submitting && intent !== "leave" && intent !== NOTIFICATIONS_INTENT;
+  const savingNotifications = submitting && intent === NOTIFICATIONS_INTENT;
   const errors: PasswordErrors = actionData?.errors ?? {};
   const loggingOut = useSubmitting(LOGOUT);
   const loggingOutEverywhere = useSubmitting(LOGOUT_EVERYWHERE);
@@ -105,8 +136,13 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
           </div>
         </header>
         {/* One card per settings topic, in spec order: name and colour,
-            notifications, password, Groups, sessions, delete login. Only
-            password, Groups and sessions exist so far. */}
+            notifications, password, Groups, sessions, delete login. Name and
+            colour and delete login come in later tickets. */}
+        <NotificationsCard
+          {...loaderData.notifications}
+          saved={actionData?.notificationsSaved ?? false}
+          saving={savingNotifications}
+        />
         <section className="card" aria-labelledby="password-heading">
           <h2 id="password-heading">Password</h2>
           <div role="status">

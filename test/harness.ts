@@ -8,6 +8,7 @@ import { env } from "cloudflare:workers";
 import { hashToken, randomToken } from "~/auth/crypto";
 import { setupLinkStatements } from "~/auth/setup-link-sql";
 import type { Clock, PushSender, PushSubscription } from "~/services";
+import { encodeBase64Url } from "~/web-push";
 
 import { createWorker } from "../workers/app";
 
@@ -30,18 +31,43 @@ export interface RecordedPush {
 /**
  * A push sender that records every send instead of delivering it. Each send
  * returns the status scripted for its endpoint, or 201 (accepted) by default,
- * so a test can fake a push service answering 404 or 410.
+ * so a test can fake a push service answering 404 or 410. An Error scripted
+ * for an endpoint is thrown instead, like a network failure.
  */
 export function recordingPushSender(
-  statuses: Record<string, number> = {},
+  statuses: Record<string, number | Error> = {},
 ): PushSender & { sent: RecordedPush[] } {
   const sent: RecordedPush[] = [];
   return {
     sent,
     async send(subscription, payload) {
       sent.push({ subscription, payload });
-      return { status: statuses[subscription.endpoint] ?? 201 };
+      const status = statuses[subscription.endpoint] ?? 201;
+      if (status instanceof Error) throw status;
+      return { status };
     },
+  };
+}
+
+/** Encodes bytes as unpadded base64url, the way the Push API serialises keys. */
+export { encodeBase64Url as base64Url } from "~/web-push";
+
+/** A push endpoint on an allowed push service host, unique per name. */
+export function pushEndpoint(name: string): string {
+  return `https://fcm.googleapis.com/fcm/send/${name}`;
+}
+
+/**
+ * The form fields a browser posts to /push/subscription for an endpoint: keys
+ * of the right length (65-byte p256dh, 16-byte auth). The recording push
+ * sender never encrypts, so their values do not matter.
+ */
+export function subscriptionFields(endpoint: string): Record<string, string> {
+  return {
+    intent: "save",
+    endpoint,
+    p256dh: encodeBase64Url(new Uint8Array(65).fill(4)),
+    auth: encodeBase64Url(new Uint8Array(16).fill(7)),
   };
 }
 
@@ -59,7 +85,7 @@ export interface DeviceRequestOptions {
  * `pushStatuses` scripts the push service's status per subscription endpoint.
  */
 export function startApp(
-  options: { now?: string; pushStatuses?: Record<string, number> } = {},
+  options: { now?: string; pushStatuses?: Record<string, number | Error> } = {},
 ) {
   const clock = fixedClock(options.now ?? "2026-11-03T12:00:00Z");
   const push = recordingPushSender(options.pushStatuses);
@@ -117,6 +143,11 @@ export function startApp(
       },
       post: (path: string, form: Record<string, string>, options?: DeviceRequestOptions) =>
         send(path, "POST", form, options),
+      /** Turns push on for this device and its session, as the profile's button does. */
+      async subscribe(endpoint: string) {
+        const response = await send("/push/subscription", "POST", subscriptionFields(endpoint));
+        if (response.status !== 204) throw new Error(`subscribe failed with ${response.status}`);
+      },
     };
   }
 

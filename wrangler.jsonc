@@ -15,7 +15,14 @@
 		// Iterations for new password hashes (each hash keeps its own count).
 		// 100000 is the Workers maximum. Lower it if the smoke login hits the
 		// Workers Free CPU limit; existing passwords keep working.
-		"PBKDF2_ITERATIONS": "100000"
+		"PBKDF2_ITERATIONS": "100000",
+		// Web Push (VAPID). The public key pairs with the VAPID_PRIVATE_KEY
+		// Worker secret, which scripts/operator-setup.sh generates and sets with
+		// wrangler secret put; it writes the public key here for you to commit.
+		// While it is empty, the profile says push is not set up and nothing is
+		// sent. The subject is the app's own https URL (no email anywhere).
+		"VAPID_PUBLIC_KEY": "",
+		"VAPID_SUBJECT": "https://daily-checkin.hurshm05.workers.dev"
 	},
 	"triggers": {
 		// One hourly run; scheduled() decides which jobs are due (empty for now).

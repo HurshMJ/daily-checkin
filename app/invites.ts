@@ -1,6 +1,7 @@
 import { hashToken, randomToken } from "~/auth/crypto";
-import { gameOnStatement } from "~/checkins";
+import { gameOnStatement, memberGameClaims } from "~/checkins";
 import { gameNightOf } from "~/game-night";
+import { batchWithClaims, createNotifications, type Delivery } from "~/notifications";
 import type { Clock } from "~/services";
 import { codePoints, hasInvisible, INVISIBLE_MESSAGE, normaliseText } from "~/text-rules";
 
@@ -127,8 +128,9 @@ export function joinStatements(db: D1Database, memberId: number, tokenHash: stri
  * leaves this module only in the make result, for the Owner to copy; D1 sees
  * its hash.
  */
-export function createInvites({ env, clock }: { env: Env; clock: Clock }) {
+export function createInvites({ env, clock, ...delivery }: { env: Env; clock: Clock } & Partial<Delivery>) {
   const db = env.DB;
+  const notifications = createNotifications({ env, clock, ...delivery });
 
   /** The one owner check: a row when the Member owns the Group, none otherwise. */
   function ownerCheck(groupId: number, memberId: number): D1PreparedStatement {
@@ -227,11 +229,21 @@ export function createInvites({ env, clock }: { env: Env; clock: Clock }) {
      * Joins an existing Member to the Invite's Group: the claim, the
      * membership and the Game On statement in one D1 batch, which is one
      * transaction, so two racing uses never both join. A Member already in
-     * the Group leaves the Invite unused.
+     * the Group leaves the Invite unused. A join that tips the Group into
+     * Game On sends it to the other Members; joining never sends "someone
+     * said Yes".
      */
     async joinWithInvite(memberId: number, token: string): Promise<JoinResult> {
       const tokenHash = await hashToken(token);
-      const [claim] = await db.batch(joinStatements(db, memberId, tokenHash, clock.now()));
+      const now = clock.now();
+      const night = gameNightOf(now);
+      const { results, events } = await batchWithClaims(
+        db,
+        joinStatements(db, memberId, tokenHash, now),
+        memberGameClaims(db, memberId, night),
+      );
+      notifications.send(memberId, night, events);
+      const [claim] = results;
       if (claim.meta.changes === 1) return "joined";
 
       const view = await inviteFor(token, memberId);

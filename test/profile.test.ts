@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 
 import { createInvites } from "~/invites";
 
+import swSource from "../public/sw.js?raw";
+
 import { startApp } from "./harness";
 
 const PASSWORD = "correct horse battery";
@@ -56,7 +58,7 @@ describe("the Groups card on the profile", () => {
     const { bob } = await setUp();
     const main = mainOf(await (await bob.get("/profile")).text());
     const headings = [...main.matchAll(/<h2 id="[^"]*">([^<]*)<\/h2>/g)].map(([, text]) => text);
-    expect(headings).toEqual(["Password", "Groups", "Sessions"]);
+    expect(headings).toEqual(["Notifications", "Password", "Groups", "Sessions"]);
   });
 
   it("gives a Member a Leave button described by the Group's name", async () => {
@@ -141,5 +143,135 @@ describe("leaving a Group from the profile", () => {
     );
     expect(response.status).toBe(403);
     expect(await isMember(friday, "Bob")).toBe(true);
+  });
+});
+
+/** The Notifications card's inner HTML. */
+function notificationsCard(main: string): string {
+  const card = main.match(/<section class="card" aria-labelledby="notifications-heading">([\s\S]*?)<\/section>/);
+  expect(card, "Notifications card").not.toBeNull();
+  return card![1];
+}
+
+/** Each toggle's name and whether its box is checked, in page order. */
+function toggles(card: string): [string, boolean][] {
+  return [...card.matchAll(/<span class="toggle-name"[^>]*>([^<]*)<\/span>[\s\S]*?<input([^>]*)>/g)].map(([, name, input]) => [
+    name,
+    /\schecked=""/.test(input),
+  ]);
+}
+
+describe("the Notifications card on the profile", () => {
+  it("comes first, with the three event toggles on by default and words for every state", async () => {
+    const { bob } = await setUp();
+    const card = notificationsCard(mainOf(await (await bob.get("/profile")).text()));
+    expect(toggles(card)).toEqual([
+      ["Someone said Yes", true],
+      ["Game On", true],
+      ["Game Off", true],
+    ]);
+    // Each switch says On and Off in words; CSS shows the one that applies.
+    expect(card.match(/<span class="toggle-switch" aria-hidden="true"><span class="toggle-on">On<\/span><span class="toggle-off">Off<\/span><\/span>/g)).toHaveLength(3);
+    for (const input of card.match(/<input class="toggle-input"[^>]*>/g)!) {
+      expect(input).toContain('type="checkbox"');
+      expect(input).toContain('role="switch"');
+    }
+    expect(card).toContain(">Save notifications</button>");
+    expect(card).not.toContain("Reminder");
+  });
+
+  it("says turning push on needs JavaScript until the page's script runs, and asks for no permission on load", async () => {
+    const { bob } = await setUp();
+    const card = notificationsCard(mainOf(await (await bob.get("/profile")).text()));
+    expect(card).toContain("Turning on push on this device needs JavaScript.");
+    expect(card).not.toContain("Turn on push</button>");
+  });
+
+  it("saves the toggles without JavaScript and shows them on the next visit", async () => {
+    const { bob } = await setUp();
+    const response = await bob.post("/profile", { intent: "notifications", said_yes: "on", game_off: "on" });
+    expect(response.status).toBe(200);
+    const saved = notificationsCard(mainOf(await response.text()));
+    expect(saved).toContain("Notification settings saved.");
+    expect(toggles(saved)).toEqual([
+      ["Someone said Yes", true],
+      ["Game On", false],
+      ["Game Off", true],
+    ]);
+
+    const again = notificationsCard(mainOf(await (await bob.get("/profile")).text()));
+    expect(again).not.toContain("Notification settings saved.");
+    expect(toggles(again)).toEqual([
+      ["Someone said Yes", true],
+      ["Game On", false],
+      ["Game Off", true],
+    ]);
+
+    await bob.post("/profile", { intent: "notifications", said_yes: "on", game_on: "on", game_off: "on" });
+    expect(toggles(notificationsCard(mainOf(await (await bob.get("/profile")).text()))).every(([, on]) => on)).toBe(true);
+  });
+
+  it("changes nothing on a cross-origin save", async () => {
+    const { bob } = await setUp();
+    const response = await bob.post("/profile", { intent: "notifications" }, { origin: "https://evil.example" });
+    expect(response.status).toBe(403);
+    expect(toggles(notificationsCard(mainOf(await (await bob.get("/profile")).text()))).every(([, on]) => on)).toBe(true);
+  });
+});
+
+describe("the service worker in public/sw.js", () => {
+  /** Runs the script against a fake service worker global and returns its handlers and what they did. */
+  function load() {
+    const handlers: Record<string, (event: unknown) => void> = {};
+    const shown: { title: string; options: Record<string, unknown> }[] = [];
+    const opened: string[] = [];
+    const waits: Promise<unknown>[] = [];
+    const self = {
+      location: new URL("https://daily-checkin.test/sw.js"),
+      addEventListener: (type: string, handler: (event: unknown) => void) => {
+        handlers[type] = handler;
+      },
+      registration: {
+        showNotification: async (title: string, options: Record<string, unknown>) => {
+          shown.push({ title, options });
+        },
+      },
+      clients: {
+        matchAll: async () => [],
+        openWindow: async (url: string) => {
+          opened.push(url);
+        },
+      },
+    };
+    new Function("self", swSource)(self);
+    const waitUntil = (promise: Promise<unknown>) => waits.push(promise);
+    return {
+      shown,
+      opened,
+      async push(data: string | null) {
+        handlers.push({ data: data === null ? null : { json: () => JSON.parse(data) }, waitUntil });
+        await Promise.all(waits);
+      },
+      async click(url: unknown) {
+        handlers.notificationclick({ notification: { close() {}, data: { url } }, waitUntil });
+        await Promise.all(waits);
+      },
+    };
+  }
+
+  it("shows a notification for every push, even one it cannot read", async () => {
+    const sw = load();
+    await sw.push(JSON.stringify({ title: "Game On: Friday", body: "3 said Yes", url: "/groups/1", tag: "game-on-1" }));
+    await sw.push("not json");
+    await sw.push(null);
+    expect(sw.shown.map(({ title }) => title)).toEqual(["Game On: Friday", "Daily Check-in", "Daily Check-in"]);
+    expect(sw.shown[0].options).toMatchObject({ body: "3 said Yes", tag: "game-on-1", data: { url: "/groups/1" } });
+  });
+
+  it("opens the payload's page on a tap, and only pages of the app", async () => {
+    const sw = load();
+    await sw.click("/groups/1");
+    await sw.click("https://evil.example/");
+    expect(sw.opened).toEqual(["https://daily-checkin.test/groups/1", "https://daily-checkin.test/"]);
   });
 });
