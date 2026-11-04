@@ -35,6 +35,14 @@ export interface PushSender {
   send(subscription: PushSubscription, payload: string): Promise<PushResult>;
 }
 
+/**
+ * Thrown by a push sender that cannot send at all, such as production without
+ * its VAPID key. Its message is logged as is, so it must never hold a secret.
+ */
+export class PushNotConfiguredError extends Error {
+  override name = "PushNotConfiguredError";
+}
+
 export const systemClock: Clock = {
   now: () => new Date(Date.now()),
 };

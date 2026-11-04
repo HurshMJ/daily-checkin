@@ -30,17 +30,20 @@ export interface RecordedPush {
 /**
  * A push sender that records every send instead of delivering it. Each send
  * returns the status scripted for its endpoint, or 201 (accepted) by default,
- * so a test can fake a push service answering 404 or 410.
+ * so a test can fake a push service answering 404 or 410. An Error scripted
+ * for an endpoint is thrown instead, like a network failure.
  */
 export function recordingPushSender(
-  statuses: Record<string, number> = {},
+  statuses: Record<string, number | Error> = {},
 ): PushSender & { sent: RecordedPush[] } {
   const sent: RecordedPush[] = [];
   return {
     sent,
     async send(subscription, payload) {
       sent.push({ subscription, payload });
-      return { status: statuses[subscription.endpoint] ?? 201 };
+      const status = statuses[subscription.endpoint] ?? 201;
+      if (status instanceof Error) throw status;
+      return { status };
     },
   };
 }
@@ -83,7 +86,7 @@ export interface DeviceRequestOptions {
  * `pushStatuses` scripts the push service's status per subscription endpoint.
  */
 export function startApp(
-  options: { now?: string; pushStatuses?: Record<string, number> } = {},
+  options: { now?: string; pushStatuses?: Record<string, number | Error> } = {},
 ) {
   const clock = fixedClock(options.now ?? "2026-11-03T12:00:00Z");
   const push = recordingPushSender(options.pushStatuses);

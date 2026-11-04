@@ -1,5 +1,6 @@
 import type { AvatarColour } from "~/auth/palette";
 import { gameNightOf } from "~/game-night";
+import { allClaims, batchWithClaims, type Claims, createNotifications, type Delivery, saidYesClaims } from "~/notifications";
 import type { Clock } from "~/services";
 import { codePoints, hasInvisible, INVISIBLE_MESSAGE, normaliseText } from "~/text-rules";
 
@@ -99,45 +100,101 @@ export type SetNoteResult = { ok: true } | { ok: false; error: string };
 
 export const ANSWER_FIRST_MESSAGE = "Answer Yes, Maybe or No before adding a Note.";
 
+/** The Groups a change touches, as a `FROM ... WHERE` clause that binds `?1` and aliases each Group `g`. */
+type GroupSource = string;
+
+/** Every Group the Member `?1` is in: for a Check-in change or the Member joining. */
+const MEMBER_GROUPS: GroupSource = "FROM memberships mine JOIN groups g ON g.id = mine.group_id WHERE mine.member_id = ?1";
+
+/** The one Group `?1`: for a change to its threshold or Members. */
+const ONE_GROUP: GroupSource = "FROM groups g WHERE g.id = ?1";
+
+/** The Group `g`'s count of Yes answers from its current Members on the Game Night `?2`. */
+const YES_COUNT = `(SELECT COUNT(*) FROM memberships m
+            JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
+            WHERE m.group_id = g.id)`;
+
 /**
  * The one Game On rule: marks each Group `g` that the `source` clause selects
  * as Game On on the Game Night `?2` when its current Members have at least its
- * threshold of Yes answers. `source` binds `?1` and must alias the Group `g`.
- * Nothing ever clears the mark within the night, which is how Game Off is
- * told apart.
+ * threshold of Yes answers. Nothing ever clears the mark within the night,
+ * which is how Game Off is told apart.
  */
-function gameOnSql(source: string): string {
+function gameOnSql(source: GroupSource): string {
   return `INSERT INTO group_night_state (group_id, game_night, was_on)
      SELECT g.id, ?2, 1
      ${source}
-       AND (SELECT COUNT(*) FROM memberships m
-            JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
-            WHERE m.group_id = g.id) >= g.threshold
+       AND ${YES_COUNT} >= g.threshold
      ON CONFLICT (group_id, game_night) DO UPDATE SET was_on = 1`;
+}
+
+/**
+ * The first crossing up and the first crossing down, for the Groups `source`
+ * selects, as claims that run right after the Game On statement in the same
+ * batch. Game On is claimed once a Group is marked on; Game Off once a Group
+ * that was on has fewer Yes answers than its threshold. Each flag is set at
+ * most once per Group per night, so later crossings are silent.
+ */
+function gameClaims(db: D1Database, source: GroupSource, id: number, night: string): Claims {
+  const touched = `group_id IN (SELECT g.id ${source}`;
+  return {
+    statements: [
+      db
+        .prepare(
+          `UPDATE group_night_state SET game_on_sent = 1
+           WHERE game_night = ?2 AND was_on = 1 AND game_on_sent = 0 AND ${touched})
+           RETURNING group_id`,
+        )
+        .bind(id, night),
+      db
+        .prepare(
+          `UPDATE group_night_state SET game_off_sent = 1
+           WHERE game_night = ?2 AND was_on = 1 AND game_off_sent = 0 AND ${touched} AND ${YES_COUNT} < g.threshold)
+           RETURNING group_id`,
+        )
+        .bind(id, night),
+    ],
+    events: ([on, off]) => [
+      ...(on.results as { group_id: number }[]).map((row) => ({ type: "game_on" as const, groupId: row.group_id })),
+      ...(off.results as { group_id: number }[]).map((row) => ({ type: "game_off" as const, groupId: row.group_id })),
+    ],
+  };
 }
 
 /**
  * The Game On statement for every Group of the Member. Run it in the same D1
  * batch as any change that can raise those Groups' Yes counts: a Check-in
- * change, or the Member joining a Group.
+ * change, or the Member joining a Group. Follow it with `memberGameClaims`.
  */
 export function gameOnStatement(db: D1Database, memberId: number, night: string): D1PreparedStatement {
-  return db
-    .prepare(gameOnSql("FROM memberships mine JOIN groups g ON g.id = mine.group_id WHERE mine.member_id = ?1"))
-    .bind(memberId, night);
+  return db.prepare(gameOnSql(MEMBER_GROUPS)).bind(memberId, night);
+}
+
+/** The Game On and Game Off claims for every Group of the Member, to follow `gameOnStatement`. */
+export function memberGameClaims(db: D1Database, memberId: number, night: string): Claims {
+  return gameClaims(db, MEMBER_GROUPS, memberId, night);
 }
 
 /**
  * The Game On statement for one Group. Run it in the same D1 batch as any
- * change to the Group's threshold or Members.
+ * change to the Group's threshold or Members. Follow it with `groupGameClaims`.
  */
 export function groupGameOnStatement(db: D1Database, groupId: number, night: string): D1PreparedStatement {
-  return db.prepare(gameOnSql("FROM groups g WHERE g.id = ?1")).bind(groupId, night);
+  return db.prepare(gameOnSql(ONE_GROUP)).bind(groupId, night);
 }
 
-/** Check-ins and tonight's Boards, on D1 and the injected clock. */
-export function createCheckins({ env, clock }: { env: Env; clock: Clock }) {
+/** The Game On and Game Off claims for one Group, to follow `groupGameOnStatement`. */
+export function groupGameClaims(db: D1Database, groupId: number, night: string): Claims {
+  return gameClaims(db, ONE_GROUP, groupId, night);
+}
+
+/**
+ * Check-ins and tonight's Boards, on D1 and the injected clock. With the push
+ * sender and execution context, changes also send the pushes they cause.
+ */
+export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: Clock } & Partial<Delivery>) {
   const db = env.DB;
+  const notifications = createNotifications({ env, clock, ...delivery });
 
   return {
     /**
@@ -146,11 +203,14 @@ export function createCheckins({ env, clock }: { env: Env; clock: Clock }) {
      * transaction, every Group of the Member that now has at least its
      * threshold of Yes answers is marked Game On for tonight. Nothing ever
      * clears that mark within the night, which is how Game Off is told apart.
+     * The same batch claims "someone said Yes", Game On and Game Off, which
+     * are then sent to everyone but the Member.
      */
     async setAvailability(memberId: number, availability: Availability): Promise<void> {
       const now = clock.now();
       const night = gameNightOf(now);
-      await db.batch([
+      const claims = allClaims(saidYesClaims(db, memberId, night), memberGameClaims(db, memberId, night));
+      const { events } = await batchWithClaims(db, [
         db
           .prepare(
             `INSERT INTO checkins (member_id, game_night, availability, note, updated_at)
@@ -160,7 +220,8 @@ export function createCheckins({ env, clock }: { env: Env; clock: Clock }) {
           )
           .bind(memberId, night, availability, now.toISOString()),
         gameOnStatement(db, memberId, night),
-      ]);
+      ], claims);
+      notifications.send(memberId, night, events);
     },
 
     /**

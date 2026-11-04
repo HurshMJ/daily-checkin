@@ -1,6 +1,7 @@
 import type { AvatarColour } from "~/auth/palette";
-import { groupGameOnStatement } from "~/checkins";
+import { groupGameClaims, groupGameOnStatement } from "~/checkins";
 import { gameNightOf } from "~/game-night";
+import { batchWithClaims, createNotifications, type Delivery } from "~/notifications";
 import type { Clock } from "~/services";
 import { codePoints, hasInvisible, INVISIBLE_MESSAGE, normaliseText } from "~/text-rules";
 
@@ -90,9 +91,31 @@ export const NOT_IN_GROUP_MESSAGE = "That person is not in this Group.";
 export const OWNER_STAYS_MESSAGE = "The Owner cannot be removed. Make another Member Owner first.";
 export const HAND_OVER_TO_OTHER_MESSAGE = "Choose another Member of the Group.";
 
-/** Groups and their Members, on D1 and the injected clock. */
-export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
+/**
+ * Groups and their Members, on D1 and the injected clock. With the push sender
+ * and execution context, changes also send the Game On and Game Off pushes
+ * they cause.
+ */
+export function createGroups({ env, clock, ...delivery }: { env: Env; clock: Clock } & Partial<Delivery>) {
   const db = env.DB;
+  const notifications = createNotifications({ env, clock, ...delivery });
+  const night = () => gameNightOf(clock.now());
+
+  /**
+   * Runs an Owner's or Member's change to one Group in one D1 batch with the
+   * Game On statement and the Game On and Game Off claims, then sends what was
+   * claimed to everyone but the actor. Returns the change's own results.
+   */
+  async function changeGroup(actorId: number, groupId: number, statements: D1PreparedStatement[]): Promise<D1Result[]> {
+    const tonight = night();
+    const { results, events } = await batchWithClaims(
+      db,
+      [...statements, groupGameOnStatement(db, groupId, tonight)],
+      groupGameClaims(db, groupId, tonight),
+    );
+    notifications.send(actorId, tonight, events);
+    return results;
+  }
 
   /** Where the Member stands in the Group: read only to explain a write that changed nothing. */
   async function standing(memberId: number, groupId: number): Promise<"owner" | "member" | "outsider"> {
@@ -114,8 +137,6 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
     if (stands === "member") return { ok: false, reason: "not-owner" };
     return { ok: false, reason: "invalid", error: asOwner };
   }
-
-  const night = () => gameNightOf(clock.now());
 
   return {
     /**
@@ -205,14 +226,13 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
      * Sets the Game On Threshold, only for the current Owner. In the same
      * batch the Group is marked Game On for tonight if its Yes count now
      * reaches the new threshold; a raised threshold never clears the mark,
-     * so the Board reads Game Off.
+     * so the Board reads Game Off. Either crossing sends its push.
      */
     async setThreshold(ownerId: number, groupId: number, raw: string): Promise<GroupChangeResult> {
       const error = thresholdError(raw);
       if (error) return { ok: false, reason: "invalid", error };
-      const [updated] = await db.batch([
+      const [updated] = await changeGroup(ownerId, groupId, [
         db.prepare("UPDATE groups SET threshold = ?1 WHERE id = ?2 AND owner_id = ?3").bind(Number(raw), groupId, ownerId),
-        groupGameOnStatement(db, groupId, night()),
       ]);
       return updated.meta.changes === 1 ? { ok: true } : refusal(ownerId, groupId, NOT_IN_GROUP_MESSAGE);
     },
@@ -235,17 +255,17 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
 
     /**
      * Removes a Member other than the Owner, only for the current Owner. The
-     * Member's Check-ins stay; they stop counting for this Group at once.
+     * Member's Check-ins stay; they stop counting for this Group at once,
+     * so a removal that drops the Group below its threshold sends Game Off.
      */
     async remove(ownerId: number, groupId: number, memberId: number): Promise<GroupChangeResult> {
-      const [removed] = await db.batch([
+      const [removed] = await changeGroup(ownerId, groupId, [
         db
           .prepare(
             `DELETE FROM memberships WHERE group_id = ?1 AND member_id = ?2 AND member_id <> ?3
              AND EXISTS (SELECT 1 FROM groups WHERE id = ?1 AND owner_id = ?3)`,
           )
           .bind(groupId, memberId, ownerId),
-        groupGameOnStatement(db, groupId, night()),
       ]);
       if (removed.meta.changes === 1) return { ok: true };
       return refusal(ownerId, groupId, memberId === ownerId ? OWNER_STAYS_MESSAGE : NOT_IN_GROUP_MESSAGE);
@@ -256,9 +276,11 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
      * remain; an Owner who is the last Member deletes the Group by leaving.
      * Both cases are one batch, each write guarding itself. The Group delete
      * is read through RETURNING, since D1 counts cascaded rows in changes.
+     * Leaving sends no "left" push, but a leave that drops the Group below its
+     * threshold sends Game Off to those still at Yes.
      */
     async leave(memberId: number, groupId: number): Promise<LeaveResult> {
-      const [left, deleted] = await db.batch([
+      const [left, deleted] = await changeGroup(memberId, groupId, [
         db
           .prepare(
             `DELETE FROM memberships WHERE group_id = ?1 AND member_id = ?2
@@ -272,7 +294,6 @@ export function createGroups({ env, clock }: { env: Env; clock: Clock }) {
              RETURNING id`,
           )
           .bind(groupId, memberId),
-        groupGameOnStatement(db, groupId, night()),
       ]);
       if (left.meta.changes === 1) return { ok: true, deleted: false };
       if (deleted.results.length === 1) return { ok: true, deleted: true };
