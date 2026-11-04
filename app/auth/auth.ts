@@ -11,11 +11,15 @@ import {
 import { createLoginLimits } from "./login-limits";
 import type { AvatarColour } from "./palette";
 import {
+  nameKey,
   type NewLoginForm,
   normalisePassword,
   normaliseUsername,
   passwordError,
   passwordTooLong,
+  type ProfileNamesErrors,
+  type ProfileNamesForm,
+  USERNAME_IS_PASSWORD_MESSAGE,
   usernameKey,
   usernameTooLong,
 } from "./rules";
@@ -27,6 +31,8 @@ export const SESSION_LIFETIME_MS = 90 * 24 * 60 * 60 * 1000;
 export interface CurrentMember {
   id: number;
   username: string;
+  /** Null when the Member has not chosen one and shows their username. */
+  displayName: string | null;
   colour: AvatarColour;
 }
 
@@ -34,10 +40,16 @@ export type CreateLoginResult =
   | { ok: true; sessionToken: string }
   | { ok: false; reason: "link-unusable" | "username-taken" };
 
+export type SaveProfileNamesResult = { ok: true } | { ok: false; errors: ProfileNamesErrors };
+
 export type ChangePasswordResult =
   | { ok: true }
   | { ok: false; reason: "limited" | "wrong-current" }
   | { ok: false; reason: "new-password"; message: string };
+
+// D1's message when an insert or update hits a name another Member holds:
+// the name_keys primary key, or the login key on members.
+const NAME_TAKEN = /UNIQUE constraint failed: (name_keys\.name_key|members\.username_lower)/;
 
 // Run against unknown usernames so a login attempt costs the same PBKDF2 work
 // whether or not the username exists.
@@ -79,7 +91,7 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     const nowIso = now.toISOString();
     const key = usernameKey(form.username);
 
-    const taken = await db.prepare("SELECT 1 FROM members WHERE username_lower = ?1").bind(key).first();
+    const taken = await db.prepare("SELECT 1 FROM name_keys WHERE name_key = ?1").bind(key).first();
     if (taken) return { ok: false, reason: "username-taken" };
 
     const password = await hashPassword(form.password, iterationsFromEnv(env.PBKDF2_ITERATIONS));
@@ -97,6 +109,12 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
           .bind(form.username, key, form.colour, password.hash, password.salt, password.iterations, nowIso),
         db
           .prepare(
+            `INSERT INTO name_keys (name_key, member_id)
+             SELECT ?1, id FROM members WHERE username_lower = ?1 AND changes() = 1`,
+          )
+          .bind(key),
+        db
+          .prepare(
             `INSERT INTO sessions (token_hash, member_id, expires_at, created_at)
              SELECT ?1, id, ?2, ?3 FROM members WHERE username_lower = ?4 AND changes() = 1`,
           )
@@ -104,8 +122,9 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
         ...then,
       ]);
     } catch (error) {
-      // Someone took the username between the check above and the batch.
-      if (String(error).includes("UNIQUE constraint failed: members.username_lower")) {
+      // Someone took the name, as a username or a Display Name, between the
+      // check above and the batch.
+      if (NAME_TAKEN.test(String(error))) {
         return { ok: false, reason: "username-taken" };
       }
       throw error;
@@ -263,6 +282,69 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     },
 
     /**
+     * Saves a Member's username, Display Name and avatar colour from the
+     * profile, in one D1 batch: the Member's name_keys rows are deleted, the
+     * username key and (when set and different) the Display Name key are
+     * inserted, and members is updated. The name_keys primary key is the only
+     * guard on a name another Member holds, so two racing renames cannot both
+     * take one name and a refused save changes nothing.
+     *
+     * When the username changes, the new username as typed is hashed once
+     * with the Member's stored salt and refused if it is their password. A
+     * case variant of the password is not caught (one PBKDF2 run only).
+     */
+    async saveProfileNames(member: CurrentMember, form: ProfileNamesForm): Promise<SaveProfileNamesResult> {
+      if (form.username !== member.username) {
+        const row = await db
+          .prepare("SELECT password_hash, password_salt, password_iterations FROM members WHERE id = ?1")
+          .bind(member.id)
+          .first<{ password_hash: string; password_salt: string; password_iterations: number }>();
+        const isPassword =
+          row !== null &&
+          (await verifyPassword(normalisePassword(form.username), {
+            hash: row.password_hash,
+            salt: row.password_salt,
+            iterations: row.password_iterations,
+          }));
+        if (isPassword) return { ok: false, errors: { username: USERNAME_IS_PASSWORD_MESSAGE } };
+      }
+
+      const usernameKeyValue = nameKey(form.username);
+      const displayNameKey = form.displayName === null ? null : nameKey(form.displayName);
+      const keys = [usernameKeyValue];
+      if (displayNameKey !== null && displayNameKey !== usernameKeyValue) keys.push(displayNameKey);
+
+      try {
+        await db.batch([
+          db.prepare("DELETE FROM name_keys WHERE member_id = ?1").bind(member.id),
+          ...keys.map((key) =>
+            db.prepare("INSERT INTO name_keys (name_key, member_id) VALUES (?1, ?2)").bind(key, member.id),
+          ),
+          db
+            .prepare("UPDATE members SET username = ?1, username_lower = ?2, display_name = ?3, colour = ?4 WHERE id = ?5")
+            .bind(form.username, usernameKeyValue, form.displayName, form.colour, member.id),
+        ]);
+      } catch (error) {
+        if (!NAME_TAKEN.test(String(error))) throw error;
+        // The batch changed nothing. Look up which of the two names another
+        // Member holds only to put the message next to the right field.
+        const placeholders = keys.map((_, i) => `?${i + 2}`).join(", ");
+        const { results } = await db
+          .prepare(`SELECT name_key FROM name_keys WHERE member_id != ?1 AND name_key IN (${placeholders})`)
+          .bind(member.id, ...keys)
+          .all<{ name_key: string }>();
+        const displayNameClashed =
+          displayNameKey !== null && results.some((row) => row.name_key === displayNameKey) &&
+          !results.some((row) => row.name_key === usernameKeyValue);
+        return {
+          ok: false,
+          errors: displayNameClashed ? { displayName: "That name is taken." } : { username: "That username is taken." },
+        };
+      }
+      return { ok: true };
+    },
+
+    /**
      * Finds the Member a session token belongs to and pushes its expiry to 90
      * days from now. An expired or unknown token gives null.
      */
@@ -275,7 +357,8 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
           .bind(sessionExpiry(now), tokenHash, now.toISOString()),
         db
           .prepare(
-            `SELECT m.id, m.username, m.colour FROM sessions s JOIN members m ON m.id = s.member_id
+            `SELECT m.id, m.username, m.display_name AS displayName, m.colour
+             FROM sessions s JOIN members m ON m.id = s.member_id
              WHERE s.token_hash = ?1 AND s.expires_at > ?2`,
           )
           .bind(tokenHash, now.toISOString()),
