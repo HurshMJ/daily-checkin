@@ -28,6 +28,10 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `app/game-night.ts` | `gameNightOf()`: the Game Night of an instant, the UTC+4 date of the most recent 06:00 UTC+4; `zoneDayTime()` shows a time in that zone |
 | `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule, the Group page read) and Check-ins (Availability, Note, the Game On statement, tonight's Boards) |
 | `app/invites.ts` | Invites: the label rule, Owner-only make, list and cancel, and joining a Group with an Invite |
+| `app/push.ts` | Push subscriptions (the endpoint check at the trust boundary, save and delete) and notification toggles |
+| `app/notifications.ts` | Notification rules: the "someone said Yes" claim, recipients, payloads, and delivery after the response |
+| `app/web-push.ts` | Web Push on WebCrypto: aes128gcm payload encryption and the VAPID ES256 token |
+| `public/sw.js` | The service worker: shows each push and opens its page on a tap |
 | `app/text-rules.ts` | The one counting rule for usernames, Group names and Notes: trimmed, NFC, code points, no invisible characters |
 | `migrations/` | Numbered D1 migrations. Add new files only; never edit or drop an applied one |
 | `test/` | Tests and the test harness |
@@ -192,10 +196,47 @@ other Member sees the page read-only and gets 403 for every Owner action.
 Any Member leaves a Group from the **Groups** card on their profile. The Owner
 cannot leave while other Members remain and is told to make another Member
 Owner first; an Owner who is the last Member deletes the Group by leaving.
-Nothing notifies anyone of these changes.
+No push says that someone left, was removed or that a Group was deleted.
 
 Every threshold or membership change re-checks tonight's Game On in the same
-D1 batch. A Group that drops below its threshold after Game On reads Game Off.
+D1 batch. A Group that drops below its threshold after Game On reads Game Off,
+and the crossing sends Game On or Game Off like a Check-in would (see
+*Push notifications*).
+
+## Push notifications
+
+A Member turns push on from the **Notifications** card on their profile. The
+browser asks for permission only after a tap on **Turn on push**, and the
+device's subscription is stored for that login session. On iPhone, push works
+only in the app added to the Home Screen, so Safari outside it shows "Add to
+Home Screen first" instead of the button. **Turn off on this device** forgets
+the device; logging the device out does too, and Log out everywhere and a
+password change forget the other devices.
+
+Three event types, each with a switch on the card, all on by default:
+
+| Type | Sent when | To |
+|------|-----------|----|
+| Someone said Yes | a Member's Availability becomes Yes, once per Member per Game Night | the other Members of all their Groups, once each |
+| Game On | a Group first reaches its threshold in a Game Night | every Member of the Group |
+| Game Off | a Group that was Game On first drops below it | the Group's Members at Yes now |
+
+Game On and Game Off fire the same way for a Check-in, a threshold change, a
+join, a leave or a removal, at most once each per Group per night. Nobody is
+sent a push about their own action. A Note edit or a join never sends
+"someone said Yes". There are no quiet hours. Each send is claimed in the same D1
+batch as the change, so two racing requests never both send it.
+
+Pushes go out after the response (`ctx.waitUntil`), so a push service never
+slows or fails a Member's request. A 404 or 410 deletes that subscription;
+other failures are logged once per event, never with the endpoint. Each push
+is one subrequest, so Workers Free (50 subrequests per invocation) bounds how
+many devices one change can reach.
+
+The server accepts a subscription only with an `https` endpoint of at most 2048
+characters on a known push service (`fcm.googleapis.com`,
+`updates.push.services.mozilla.com`, `*.push.apple.com`, `*.notify.windows.com`)
+and base64url keys of the right length.
 
 ## Tests
 
@@ -214,13 +255,17 @@ clean.
 Two things are swapped out at the Worker boundary, and nothing else:
 
 - **Clock** (`now()`): production reads the system time; tests set the time.
-- **Push sender** (`send(subscription, payload)`): production delivery is not
-  built yet and throws `Push sender not configured`; tests use a fake that
-  records every send.
+- **Push sender** (`send(subscription, payload)`): production sends Web Push
+  (aes128gcm and VAPID, on WebCrypto in `app/web-push.ts`) and returns the
+  push service's status; without the `VAPID_PRIVATE_KEY` secret it sends
+  nothing. Tests use a fake that records every send and can answer 404, 410,
+  any other status, or throw.
 
 The mechanism is one function. `createWorker(services)` in `workers/app.ts`
-returns the Worker's handlers, and the default export is
-`createWorker(productionServices)`. Each request puts the services, `env` and
+returns the Worker's handlers; it also takes a function that builds the
+services from `env`, and the default export is
+`createWorker(productionServices)`, whose push sender reads its key from
+`env`. Each request puts the services, `env` and
 the execution context into React Router's context under `appContext`, so a
 loader or action reads them with `context.get(appContext)`. The `scheduled`
 handler receives the same services directly. Each hourly run calls the Reset,
@@ -314,10 +359,31 @@ The Operator runs the setup wizard once, before the first deploy:
 ```
 
 It walks through logging wrangler in, checking the `workers.dev` subdomain,
-creating the D1 database and writing its id into `wrangler.jsonc`, and storing
-the account ID and a scoped API token in GitHub Secrets. Commit the
-`database_id` change afterwards; until then `wrangler.jsonc` holds a placeholder
-id and the remote steps fail.
+creating the D1 database and writing its id into `wrangler.jsonc`, storing
+the account ID and a scoped API token in GitHub Secrets, and setting up the
+Web Push keys. Commit the `database_id` change afterwards; until then
+`wrangler.jsonc` holds a placeholder id and the remote steps fail.
+
+### Web Push keys
+
+Push needs a VAPID key pair. Its private key is the Worker secret
+`VAPID_PRIVATE_KEY` (a JWK JSON string), never stored in the repository, in
+GitHub Secrets or in any log; its public key is `vars.VAPID_PUBLIC_KEY` in
+`wrangler.jsonc`, and `vars.VAPID_SUBJECT` is the app's https URL. To set them
+up, or later to rotate them, run only that stage:
+
+```sh
+./scripts/operator-setup.sh vapid
+```
+
+It generates a pair (or takes an existing private key you paste), sets the
+secret with `wrangler secret put`, and writes the public key into
+`wrangler.jsonc`. Commit that change and let it deploy. Re-running keeps the
+existing pair unless you choose to rotate it. While `VAPID_PUBLIC_KEY` is
+empty the profile says push is not set up, and while the secret is missing no
+push is sent and each attempt is logged. Rotating, or losing the private key,
+makes every subscription invalid: the push services answer 403 or 410, and
+Members turn push on again.
 
 ### Rolling back
 

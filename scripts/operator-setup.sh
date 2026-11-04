@@ -194,7 +194,109 @@ cd "$(dirname "${BASH_SOURCE[0]}")/.."
 WRANGLER_CONFIG="wrangler.jsonc"
 PLACEHOLDER_DB_ID="00000000-0000-0000-0000-000000000000"
 
-TOTAL_STAGES=6
+# _vapid_keys prints two lines: the VAPID public key (base64url) and the
+# private key as JWK JSON. It reads a JWK from standard input, so it never
+# shows in the process list: given one, it checks it and derives its public
+# key; given nothing, it generates a new P-256 pair. The caller captures the
+# output and never prints it; a bad key prints only a generic error.
+_vapid_keys() {
+  node --input-type=module -e '
+    try {
+      let given = "";
+      for await (const chunk of process.stdin) given += chunk;
+      let jwk;
+      if (given.trim()) {
+        jwk = JSON.parse(given);
+        if (jwk.kty !== "EC" || jwk.crv !== "P-256" || !jwk.d || !jwk.x || !jwk.y) throw new Error();
+        jwk = { kty: jwk.kty, crv: jwk.crv, x: jwk.x, y: jwk.y, d: jwk.d };
+      } else {
+        const pair = await crypto.subtle.generateKey({ name: "ECDSA", namedCurve: "P-256" }, true, ["sign", "verify"]);
+        const { kty, crv, x, y, d } = await crypto.subtle.exportKey("jwk", pair.privateKey);
+        jwk = { kty, crv, x, y, d };
+      }
+      const point = Buffer.concat([Buffer.from([4]), Buffer.from(jwk.x, "base64url"), Buffer.from(jwk.y, "base64url")]);
+      if (point.length !== 65) throw new Error();
+      console.log(point.toString("base64url"));
+      console.log(JSON.stringify(jwk));
+    } catch {
+      console.error("Not a P-256 private key in JWK JSON.");
+      process.exit(1);
+    }
+  '
+}
+
+# _committed_vapid_public prints the VAPID_PUBLIC_KEY value in wrangler.jsonc.
+_committed_vapid_public() {
+  sed -nE 's/.*"VAPID_PUBLIC_KEY": *"([^"]*)".*/\1/p' "$WRANGLER_CONFIG"
+}
+
+# vapid_stage: the Web Push key pair. The private key goes straight to the
+# Worker secret VAPID_PRIVATE_KEY with wrangler secret put; it is never
+# printed, written to a file, or stored in GitHub. The public key is written
+# into wrangler.jsonc for the Operator to commit.
+vapid_stage() {
+  stage "Set up the Web Push (VAPID) keys"
+  say "Push notifications are signed with a VAPID key pair. The private key"
+  say "becomes the Worker secret VAPID_PRIVATE_KEY; the public key goes in $WRANGLER_CONFIG."
+  local current has_secret=0 public private
+  current=$(_committed_vapid_public)
+  if npx wrangler secret list 2>/dev/null | grep -q '"VAPID_PRIVATE_KEY"'; then has_secret=1; fi
+
+  if [[ -n "$current" && "$has_secret" == 1 ]]; then
+    note "A key pair is already set up: the secret exists and $WRANGLER_CONFIG holds its public key."
+    warn "Rotating makes every device's push subscription invalid; Members must turn push on again."
+    if ! confirm "Rotate the VAPID key pair?"; then
+      note "Keeping the existing key pair."
+      pause
+      return
+    fi
+  elif [[ -n "$current" ]]; then
+    warn "$WRANGLER_CONFIG has a public key but the Worker has no VAPID_PRIVATE_KEY secret."
+    note "Without the matching private key, set up a new pair or paste the original private key."
+  fi
+
+  local reuse=""
+  if confirm "Do you have an existing VAPID private key (JWK JSON) to reuse?"; then
+    ask_secret VAPID_PRIVATE_JWK "Paste the private key JWK (input hidden):"
+    reuse="$VAPID_PRIVATE_JWK"
+    unset VAPID_PRIVATE_JWK
+  fi
+  if ! { read -r public && read -r private; } < <(printf '%s' "$reuse" | _vapid_keys); then
+    unset reuse private
+    printf '  %sThat is not a P-256 private key in JWK JSON. Re-run the wizard.%s\n' "$RED" "$RESET"
+    exit 1
+  fi
+  unset reuse
+
+  if printf '%s' "$private" | npx wrangler secret put VAPID_PRIVATE_KEY >/dev/null; then
+    unset private
+    printf '  %s✓ set%s Worker secret VAPID_PRIVATE_KEY\n' "$GREEN" "$RESET"
+  else
+    unset private
+    printf '  %sCould not set the Worker secret. Check the wrangler login and re-run.%s\n' "$RED" "$RESET"
+    exit 1
+  fi
+  sed -i.bak -E "s/(\"VAPID_PUBLIC_KEY\": *)\"[^\"]*\"/\\1\"$public\"/" "$WRANGLER_CONFIG" && rm -f "$WRANGLER_CONFIG.bak"
+  printf '  %s✓ wrote%s VAPID_PUBLIC_KEY → %s\n' "$GREEN" "$RESET" "$WRANGLER_CONFIG"
+  SKIPPED+=("commit VAPID_PUBLIC_KEY in $WRANGLER_CONFIG and deploy; push stays off until the deployed public key matches the secret")
+  pause
+}
+
+# ./scripts/operator-setup.sh vapid runs only the push key stage, for an
+# Operator who has done the rest already or wants to rotate the keys.
+if [[ "${1:-}" == "vapid" ]]; then
+  TOTAL_STAGES=1
+  banner "Daily Check-in: Web Push keys"
+  if ! npx wrangler whoami 2>/dev/null | grep -q "You are logged in"; then
+    step "A browser tab opens; log in and allow wrangler access."
+    npx wrangler login
+  fi
+  vapid_stage
+  finish
+  exit 0
+fi
+
+TOTAL_STAGES=7
 
 banner "Daily Check-in: Cloudflare and GitHub setup"
 
@@ -277,9 +379,12 @@ note "GitHub should now hold exactly two secrets for this app:"
 note "CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID."
 pause
 
+# ── 7. Set up the Web Push keys ───────────────────────────────────────────
+vapid_stage
+
 finish
 say "Next:"
-step "Commit the database_id in $WRANGLER_CONFIG to the pull request branch."
+step "Commit the database_id and VAPID_PUBLIC_KEY in $WRANGLER_CONFIG to the pull request branch."
 step "Merge the pull request; GitHub Actions deploys main."
 step "Open https://daily-checkin.${WORKERS_SUBDOMAIN:-<subdomain>}.workers.dev/healthz"
 printf '\n'

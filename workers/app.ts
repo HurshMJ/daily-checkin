@@ -10,18 +10,20 @@ const requestHandler = createRequestHandler(
 );
 
 /**
- * Builds the Worker's entry points around one set of services. The default
- * export uses the production services; tests call `createWorker()` with a
- * fixed clock and a recording push sender and then invoke the same `fetch`
- * and `scheduled` handlers the runtime calls.
+ * Builds the Worker's entry points around one set of services, or a function
+ * that builds them from `env` on each invocation. The default export builds
+ * the production services, whose push sender reads its key from `env`; tests
+ * call `createWorker()` with a fixed clock and a recording push sender and
+ * then invoke the same `fetch` and `scheduled` handlers the runtime calls.
  */
-export function createWorker(services: Services) {
+export function createWorker(services: Services | ((env: Env) => Services)) {
+  const servicesFor = typeof services === "function" ? services : () => services;
   return {
     async fetch(request, env, ctx) {
       const refused = refuseCrossOrigin(request);
       if (refused) return refused;
       const context = new RouterContextProvider(
-        new Map([[appContext, { ...services, env, ctx }]]),
+        new Map([[appContext, { ...servicesFor(env), env, ctx }]]),
       );
       return requestHandler(request, context);
     },
@@ -29,7 +31,7 @@ export function createWorker(services: Services) {
     // The hourly run. Each job receives `services` and `env`, the same way
     // requests do, and decides for itself whether it is due.
     async scheduled(_controller, env, _ctx) {
-      await createHistory({ ...services, env }).reset();
+      await createHistory({ ...servicesFor(env), env }).reset();
     },
   } satisfies ExportedHandler<Env>;
 }

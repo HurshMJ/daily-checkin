@@ -90,18 +90,18 @@ describe("clean database per test", () => {
 });
 
 describe("production services", () => {
-  it("refuses to send pushes until a real sender is configured", async () => {
+  it("refuses to send pushes until the VAPID private key is set", async () => {
     await expect(
-      productionServices.push.send(
+      productionServices({ ...env, VAPID_PRIVATE_KEY: undefined }).push.send(
         { endpoint: "https://push.example/abc", keys: { p256dh: "k", auth: "a" } },
         "{}",
       ),
-    ).rejects.toThrow("Push sender not configured");
+    ).rejects.toThrow("VAPID_PRIVATE_KEY is not set");
   });
 
   it("reads the system time", () => {
     const before = Date.now();
-    const now = productionServices.clock.now().getTime();
+    const now = productionServices(env).clock.now().getTime();
     expect(now).toBeGreaterThanOrEqual(before);
   });
 });

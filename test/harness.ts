@@ -8,6 +8,7 @@ import { env } from "cloudflare:workers";
 import { hashToken, randomToken } from "~/auth/crypto";
 import { setupLinkStatements } from "~/auth/setup-link-sql";
 import type { Clock, PushSender, PushSubscription } from "~/services";
+import { encodeBase64Url } from "~/web-push";
 
 import { createWorker } from "../workers/app";
 
@@ -49,9 +50,7 @@ export function recordingPushSender(
 }
 
 /** Encodes bytes as unpadded base64url, the way the Push API serialises keys. */
-export function base64Url(bytes: Uint8Array): string {
-  return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-}
+export { encodeBase64Url as base64Url } from "~/web-push";
 
 /** A push endpoint on an allowed push service host, unique per name. */
 export function pushEndpoint(name: string): string {
@@ -67,8 +66,8 @@ export function subscriptionFields(endpoint: string): Record<string, string> {
   return {
     intent: "save",
     endpoint,
-    p256dh: base64Url(new Uint8Array(65).fill(4)),
-    auth: base64Url(new Uint8Array(16).fill(7)),
+    p256dh: encodeBase64Url(new Uint8Array(65).fill(4)),
+    auth: encodeBase64Url(new Uint8Array(16).fill(7)),
   };
 }
 
