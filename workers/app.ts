@@ -2,6 +2,7 @@ import { createRequestHandler, RouterContextProvider } from "react-router";
 
 import { refuseCrossOrigin } from "../app/auth/request";
 import { createHistory } from "../app/history";
+import { createNotifications } from "../app/notifications";
 import { appContext, productionServices, type Services } from "../app/services";
 
 const requestHandler = createRequestHandler(
@@ -29,9 +30,15 @@ export function createWorker(services: Services | ((env: Env) => Services)) {
     },
 
     // The hourly run. Each job receives `services` and `env`, the same way
-    // requests do, and decides for itself whether it is due.
+    // requests do, and decides for itself whether it is due. The scheduled
+    // pushes run even when the Reset fails, whose error still fails the run.
     async scheduled(_controller, env, _ctx) {
-      await createHistory({ ...servicesFor(env), env }).reset();
+      const services = { ...servicesFor(env), env };
+      try {
+        await createHistory(services).reset();
+      } finally {
+        await createNotifications(services).sendScheduled();
+      }
     },
   } satisfies ExportedHandler<Env>;
 }

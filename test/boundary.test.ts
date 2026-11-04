@@ -37,12 +37,18 @@ describe("Worker boundary", () => {
     expect(await second.json()).toEqual({ ok: true, now: "2026-11-04T02:00:00.000Z" });
   });
 
-  it("runs the scheduled handler with the injected push sender and sends nothing yet", async () => {
-    const app = startApp({ now: "2026-11-03T13:00:00Z" });
+  it("runs the scheduled handler with the injected push sender", async () => {
+    const app = startApp({ now: "2026-11-03T12:00:00Z" });
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery" });
+    await alice.post("/groups/new", { name: "Friday" });
+    await alice.subscribe("https://fcm.googleapis.com/fcm/send/alice");
 
+    app.clock.set("2026-11-03T13:00:00Z");
     await app.runScheduled();
 
-    expect(app.push.sent).toEqual([]);
+    expect(app.push.sent.map(({ subscription }) => subscription.endpoint)).toEqual([
+      "https://fcm.googleapis.com/fcm/send/alice",
+    ]);
   });
 
   it("lets a test script the push service's status for one endpoint", async () => {

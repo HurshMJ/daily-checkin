@@ -1,3 +1,5 @@
+import { type Availability, AVAILABILITY_LABELS, sortRows } from "~/checkins";
+import { gameNightOf, zoneHour } from "~/game-night";
 import type { EventType, NotificationType } from "~/push";
 import { type Clock, PushNotConfiguredError, type PushSender, type PushSubscription } from "~/services";
 
@@ -113,11 +115,15 @@ export interface Payload {
   tag: string;
 }
 
+/** Whether the payload's JSON fits in a push, counted in UTF-8 bytes. */
+function payloadFits(payload: Payload): boolean {
+  return new TextEncoder().encode(JSON.stringify(payload)).length <= MAX_PAYLOAD_BYTES;
+}
+
 /** The payload as JSON, refusing one that would not fit in a push. */
 export function encodePayload(payload: Payload): string {
-  const json = JSON.stringify(payload);
-  if (new TextEncoder().encode(json).length > MAX_PAYLOAD_BYTES) throw new Error("Push payload too large");
-  return json;
+  if (!payloadFits(payload)) throw new Error("Push payload too large");
+  return JSON.stringify(payload);
 }
 
 function yesWord(count: number): string {
@@ -157,16 +163,85 @@ export function payloadFor(
   };
 }
 
+/** The Reminder: every Member it goes to gets the same words. */
+function reminderPayload(night: string): Payload {
+  return {
+    title: "Are you in tonight?",
+    body: "You have not answered for tonight yet. Open Tonight to say Yes, Maybe or No.",
+    url: "/",
+    tag: `reminder-${night}`,
+  };
+}
+
+/** One current Member of a Group as the Daily Summary lists them: no answer yet is null. */
+interface SummaryRow {
+  username: string;
+  availability: Availability | null;
+}
+
+/** How the Daily Summary names each kind of answer. */
+function summaryLabel(availability: Availability | null): string {
+  return availability === null ? "No answer" : AVAILABILITY_LABELS[availability];
+}
+
 /**
- * The subscriptions an event goes to. `recipients` is a subquery of member
- * ids; on top of it every push skips the actor (?1), a Member who turned the
- * type (?2) off, and a device whose session has expired by now (?3). Each
- * subscription appears once, so a Member gets one push per device.
+ * The Daily Summary body for the first `shown` Members in Board order: one
+ * line per Availability naming its Members, then "+N more" for the rest.
+ */
+function summaryBody(sorted: readonly SummaryRow[], shown: number): string {
+  const lines: string[] = [];
+  let previous: Availability | null | undefined;
+  for (const row of sorted.slice(0, shown)) {
+    if (row.availability === previous) lines[lines.length - 1] += `, ${row.username}`;
+    else lines.push(`${summaryLabel(row.availability)}: ${row.username}`);
+    previous = row.availability;
+  }
+  const rest = sorted.length - shown;
+  return [lines.join("\n"), rest > 0 ? `+${rest} more` : ""].filter((part) => part !== "").join(" ");
+}
+
+/**
+ * The Daily Summary of one Group: the counts in the title and every current
+ * Member named by Availability in Board order, without Notes. When the whole
+ * list would not fit in a push, it names as many Members as fit and ends with
+ * "+N more". Names are usernames until ticket 24 adds Display Names.
+ */
+function dailySummaryPayload(group: { id: number; name: string }, night: string, rows: readonly SummaryRow[]): Payload {
+  const sorted = sortRows(rows);
+  const count = (availability: Availability | null) => sorted.filter((row) => row.availability === availability).length;
+  const counts = [
+    `${count("yes")} Yes`,
+    `${count("maybe")} Maybe`,
+    `${count("no")} No`,
+    `${count(null)} no answer`,
+  ].filter((part) => !part.startsWith("0 "));
+  const withBody = (shown: number): Payload => ({
+    title: `${group.name}: ${counts.join(", ")}`,
+    body: summaryBody(sorted, shown),
+    url: `/groups/${group.id}`,
+    tag: `daily-summary-${group.id}-${night}`,
+  });
+  // Each name shown makes the payload longer, so stop at the first that does not fit.
+  let payload = withBody(0);
+  for (let shown = 1; shown <= sorted.length; shown++) {
+    const next = withBody(shown);
+    if (!payloadFits(next)) break;
+    payload = next;
+  }
+  return payload;
+}
+
+/**
+ * The subscriptions a push goes to. `recipients` is a subquery of member
+ * ids; on top of it every push skips the actor (?1, NULL for a scheduled push
+ * with no actor), a Member who turned the type (?2) off, and a device whose
+ * session has expired by now (?3). Each subscription appears once, so a
+ * Member gets one push per device.
  */
 function subscriptionsSql(recipients: string): string {
   return `SELECT s.endpoint, s.p256dh, s.auth FROM push_subscriptions s
           JOIN sessions se ON se.token_hash = s.session_token_hash AND se.expires_at > ?3
-          WHERE s.member_id <> ?1 AND s.member_id IN (${recipients})
+          WHERE s.member_id IS NOT ?1 AND s.member_id IN (${recipients})
           AND NOT EXISTS (SELECT 1 FROM notification_prefs p
                           WHERE p.member_id = s.member_id AND p.type = ?2 AND p.enabled = 0)`;
 }
@@ -193,6 +268,26 @@ const RECIPIENTS: Record<EventType, (groupId: number, night: string) => [sql: st
   ],
 };
 
+/**
+ * Recipients of the scheduled pushes, as subqueries for subscriptionsSql.
+ * The Reminder goes to each Member in at least one Group with no Check-in for
+ * the night ?4; Yes, Maybe and No all count as answered. The Daily Summary of
+ * the Group ?4 goes to every current Member of it.
+ */
+const REMINDER_RECIPIENTS = `SELECT m.member_id FROM memberships m
+  WHERE NOT EXISTS (SELECT 1 FROM checkins c WHERE c.member_id = m.member_id AND c.game_night = ?4)`;
+const SUMMARY_RECIPIENTS = "SELECT member_id FROM memberships WHERE group_id = ?4";
+
+/** The UTC+4 hour of the one hourly run that sends each scheduled push. */
+const SCHEDULED_HOURS: Record<ScheduledType, number> = { reminder: 17, daily_summary: 20 };
+
+/** One stored subscription as the recipients query returns it. */
+interface SubscriptionRow {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
 /** What sending needs. A caller without it, such as test setup, sends nothing. */
 export interface Delivery {
   push: PushSender;
@@ -217,7 +312,26 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
     }
   }
 
-  /** Sends one event's pushes and deletes the subscriptions the push service says are gone. */
+  /**
+   * Sends one payload to each subscription, deletes the subscriptions the
+   * push service says are gone, and logs the failures as a count.
+   */
+  async function deliver(type: NotificationType, rows: SubscriptionRow[], payload: string): Promise<void> {
+    const outcomes = await Promise.all(
+      rows.map((row) => sendOne({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, payload)),
+    );
+
+    const gone = rows.filter((_, index) => outcomes[index] === "gone");
+    if (gone.length > 0) {
+      await db.batch(gone.map((row) => db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?1").bind(row.endpoint)));
+    }
+    const failed = outcomes.filter((outcome) => outcome !== "sent" && outcome !== "gone");
+    if (failed.length > 0) {
+      console.error(`Push ${type}: ${failed.length} of ${rows.length} not sent (${[...new Set(failed)].join(", ")})`);
+    }
+  }
+
+  /** Sends one event's pushes. */
   async function deliverEvent(actorId: number, night: string, event: NotificationEvent): Promise<void> {
     const groupId = "groupId" in event ? event.groupId : null;
     const [recipients, ...binds] = RECIPIENTS[event.type](groupId ?? 0, night);
@@ -236,25 +350,69 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
         .prepare(subscriptionsSql(recipients))
         .bind(actorId, event.type, clock.now().toISOString(), ...binds),
     ]);
-    const rows = subscriptions.results as { endpoint: string; p256dh: string; auth: string }[];
+    const rows = subscriptions.results as unknown as SubscriptionRow[];
     const groupRow = group.results[0] as { name: string; threshold: number; yes: number } | undefined;
     if (rows.length === 0 || (groupId !== null && !groupRow)) return;
 
     const actorName = (actor.results[0] as { username: string } | undefined)?.username ?? "Someone";
-    const payload = encodePayload(payloadFor(event, { actorName, actorId, night, group: groupRow }));
-    const outcomes = await Promise.all(
-      rows.map((row) => sendOne({ endpoint: row.endpoint, keys: { p256dh: row.p256dh, auth: row.auth } }, payload)),
-    );
-
-    const gone = rows.filter((_, index) => outcomes[index] === "gone");
-    if (gone.length > 0) {
-      await db.batch(gone.map((row) => db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ?1").bind(row.endpoint)));
-    }
-    const failed = outcomes.filter((outcome) => outcome !== "sent" && outcome !== "gone");
-    if (failed.length > 0) {
-      console.error(`Push ${event.type}: ${failed.length} of ${rows.length} not sent (${[...new Set(failed)].join(", ")})`);
-    }
+    await deliver(event.type, rows, encodePayload(payloadFor(event, { actorName, actorId, night, group: groupRow })));
   }
+
+  /** Sends tonight's Reminder to each device of every Member in a Group who has not answered. */
+  async function sendReminder(night: string): Promise<void> {
+    const { results } = await db
+      .prepare(subscriptionsSql(REMINDER_RECIPIENTS))
+      .bind(null, "reminder", clock.now().toISOString(), night)
+      .all<SubscriptionRow>();
+    if (results.length > 0) await deliver("reminder", results, encodePayload(reminderPayload(night)));
+  }
+
+  /**
+   * Sends tonight's Daily Summary of each Group with at least one Check-in
+   * from a current Member, to every current Member's devices. One read finds
+   * the Groups and their Members, one batch finds each Group's devices.
+   */
+  async function sendDailySummaries(night: string): Promise<void> {
+    const { results: members } = await db
+      .prepare(
+        `SELECT g.id, g.name, p.username, c.availability
+         FROM groups g
+         JOIN memberships m ON m.group_id = g.id
+         JOIN members p ON p.id = m.member_id
+         LEFT JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?1
+         WHERE g.id IN (SELECT a.group_id FROM memberships a
+                        JOIN checkins ac ON ac.member_id = a.member_id AND ac.game_night = ?1)`,
+      )
+      .bind(night)
+      .all<{ id: number; name: string } & SummaryRow>();
+    const groups = new Map<number, { id: number; name: string; rows: SummaryRow[] }>();
+    for (const { id, name, username, availability } of members) {
+      if (!groups.has(id)) groups.set(id, { id, name, rows: [] });
+      groups.get(id)!.rows.push({ username, availability });
+    }
+    if (groups.size === 0) return;
+
+    const now = clock.now().toISOString();
+    const summaries = [...groups.values()];
+    const devices = await db.batch<SubscriptionRow>(
+      summaries.map((group) =>
+        db.prepare(subscriptionsSql(SUMMARY_RECIPIENTS)).bind(null, "daily_summary", now, group.id),
+      ),
+    );
+    await Promise.all(
+      summaries.map((group, index) => {
+        const rows = devices[index].results;
+        return rows.length === 0
+          ? undefined
+          : deliver("daily_summary", rows, encodePayload(dailySummaryPayload(group, night, group.rows)));
+      }),
+    );
+  }
+
+  const SCHEDULED_JOBS: Record<ScheduledType, (night: string) => Promise<void>> = {
+    reminder: sendReminder,
+    daily_summary: sendDailySummaries,
+  };
 
   return {
     /**
@@ -273,6 +431,27 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
           ),
         ),
       );
+    },
+
+    /**
+     * The hourly run's pushes: the Reminder in the 17:00 UTC+4 run and the
+     * Daily Summary in the 20:00 UTC+4 run. Each claims tonight before it
+     * sends, so a repeat run sends nothing and a missed run is never caught
+     * up. Delivery is awaited, since a scheduled run has no response to wait
+     * for. A failure is logged and never thrown, so it cannot stop the Reset.
+     */
+    async sendScheduled(): Promise<void> {
+      if (!push) return;
+      const now = clock.now();
+      const night = gameNightOf(now);
+      for (const type of Object.keys(SCHEDULED_JOBS) as ScheduledType[]) {
+        if (zoneHour(now) !== SCHEDULED_HOURS[type]) continue;
+        try {
+          if (await claimNight(db, type, night)) await SCHEDULED_JOBS[type](night);
+        } catch (error) {
+          console.error(`Push ${type}: delivery failed (${error instanceof Error ? error.name : "error"})`);
+        }
+      }
     },
   };
 }
