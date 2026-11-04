@@ -24,7 +24,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `workers/app.ts` | The Worker entry: `fetch` (the app) and `scheduled` (the hourly Cron Trigger) |
 | `app/` | React Router app: `root.tsx`, `routes.ts`, and route modules in `app/routes/` |
 | `app/services.ts` | The Clock and Push sender interfaces and their production versions |
-| `app/auth/` | Auth: passwords, sessions, Setup Links, username and password rules, the avatar palette, the `Origin` check |
+| `app/auth/` | Auth: passwords, sessions, Setup Links, username, Display Name and password rules, the Shown name, the avatar palette, the `Origin` check |
 | `app/game-night.ts` | `gameNightOf()`: the Game Night of an instant, the UTC+4 date of the most recent 06:00 UTC+4; `zoneDayTime()` shows a time in that zone |
 | `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule, the Group page read) and Check-ins (Availability, Note, the Game On statement, tonight's Boards) |
 | `app/invites.ts` | Invites: the label rule, Owner-only make, list and cancel, and joining a Group with an Invite |
@@ -32,7 +32,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `app/notifications.ts` | Notification rules: the "someone said Yes" claim, recipients, payloads, delivery after the response, and the scheduled Reminder and Daily Summary |
 | `app/web-push.ts` | Web Push on WebCrypto: aes128gcm payload encryption and the VAPID ES256 token |
 | `public/sw.js` | The service worker: shows each push and opens its page on a tap |
-| `app/text-rules.ts` | The one counting rule for usernames, Group names and Notes: trimmed, NFC, code points, no invisible characters |
+| `app/text-rules.ts` | The one counting rule for usernames, Display Names, Group names and Notes: trimmed, NFC, code points, no invisible characters (emoji joiners and tag characters allowed inside emoji in Display Names) |
 | `migrations/` | Numbered D1 migrations. Add new files only; never edit or drop an applied one |
 | `test/` | Tests and the test harness |
 | `scripts/operator-setup.sh` | One-time Operator setup wizard |
@@ -202,6 +202,31 @@ Every threshold or membership change re-checks tonight's Game On in the same
 D1 batch. A Group that drops below its threshold after Game On reads Game Off,
 and the crossing sends Game On or Game Off like a Check-in would (see
 *Push notifications*).
+
+## Names and colour
+
+The **Name and colour** card heads the profile. A Member changes their
+username, their optional Display Name and their avatar colour there, saved
+together with one **Save**.
+
+- The **Shown name** is the Display Name when set, otherwise the username.
+  Boards, past nights, History, the Group page, the Invite page and push
+  notifications show it, read at view time, so a rename also changes past
+  nights. Boards and History sort by it, ignoring case.
+- Tapping a name on a Board or past night reveals its `@username`; it works
+  without JavaScript.
+- A Display Name is 1 to 32 characters after trimming. Emoji are fine,
+  including joined emoji such as 👨‍👩‍👧 and flags; other invisible characters are
+  refused. Leaving it empty shows the username.
+- Usernames and Display Names share one namespace that ignores case: nobody
+  can take a name another Member holds as either. A Member may use their own
+  username as their Display Name. The `name_keys` table's primary key enforces
+  this inside the save's one D1 batch, so two simultaneous renames cannot both
+  take one name.
+- A new username follows the login rules and must not be the Member's
+  password as typed. A case variant of the password is not caught, because a
+  second PBKDF2 run would exceed the Workers Free CPU budget.
+- Logging in uses the new username at once. The colour shows on the next page.
 
 ## Push notifications
 
