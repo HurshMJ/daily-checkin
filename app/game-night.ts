@@ -15,6 +15,11 @@ export function gameNightOf(instant: Date): string {
   return new Date(instant.getTime() + UTC_PLUS_4_MS - NIGHT_STARTS_AT_MS).toISOString().slice(0, 10);
 }
 
+/** The hour of an instant in UTC+4, the Game Night zone, from 0 to 23. */
+export function zoneHour(instant: Date): number {
+  return new Date(instant.getTime() + UTC_PLUS_4_MS).getUTCHours();
+}
+
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
 /**

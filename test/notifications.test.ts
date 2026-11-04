@@ -3,7 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createInvites } from "~/invites";
-import { encodePayload, MAX_PAYLOAD_BYTES } from "~/notifications";
+import { claimNight, encodePayload, MAX_PAYLOAD_BYTES } from "~/notifications";
 
 import { pushEndpoint, startApp } from "./harness";
 
@@ -420,5 +420,55 @@ describe("a night already on when migration 0007 is applied", () => {
     await answer(devices.Carol, "no");
     await answer(devices.Carol, "yes");
     expect(take(app)).toEqual([]);
+  });
+});
+
+describe("claiming a Game Night for a scheduled push", () => {
+  /** The single scheduler_state row, or null before anything has claimed it. */
+  async function state() {
+    return env.DB.prepare(
+      "SELECT last_reset_game_night, last_reminder_game_night, last_summary_game_night FROM scheduler_state WHERE id = 1",
+    ).first();
+  }
+
+  it("claims a night once, and only a later night after it", async () => {
+    expect(await claimNight(env.DB, "reminder", "2026-11-03")).toBe(true);
+    expect(await claimNight(env.DB, "reminder", "2026-11-03")).toBe(false);
+    expect(await claimNight(env.DB, "reminder", "2026-11-02")).toBe(false);
+    expect(await claimNight(env.DB, "reminder", "2026-11-04")).toBe(true);
+    expect(await state()).toEqual({
+      last_reset_game_night: null,
+      last_reminder_game_night: "2026-11-04",
+      last_summary_game_night: null,
+    });
+  });
+
+  it("claims the Reminder and the Daily Summary apart, keeping the Reset's night", async () => {
+    await env.DB.prepare("INSERT INTO scheduler_state (id, last_reset_game_night) VALUES (1, '2026-11-03')").run();
+    expect(await claimNight(env.DB, "daily_summary", "2026-11-03")).toBe(true);
+    expect(await claimNight(env.DB, "reminder", "2026-11-03")).toBe(true);
+    expect(await claimNight(env.DB, "daily_summary", "2026-11-03")).toBe(false);
+    expect(await state()).toEqual({
+      last_reset_game_night: "2026-11-03",
+      last_reminder_game_night: "2026-11-03",
+      last_summary_game_night: "2026-11-03",
+    });
+  });
+});
+
+describe("migration 0008", () => {
+  it("adds empty claim columns to a scheduler_state row that already exists", async () => {
+    await reset();
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((migration) => !migration.name.startsWith("0008")));
+    await env.DB.prepare("INSERT INTO scheduler_state (id, last_reset_game_night) VALUES (1, '2026-11-03')").run();
+
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+    expect(
+      await env.DB.prepare(
+        "SELECT last_reset_game_night, last_reminder_game_night, last_summary_game_night FROM scheduler_state",
+      ).all(),
+    ).toMatchObject({
+      results: [{ last_reset_game_night: "2026-11-03", last_reminder_game_night: null, last_summary_game_night: null }],
+    });
   });
 });

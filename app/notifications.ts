@@ -1,4 +1,4 @@
-import type { EventType } from "~/push";
+import type { EventType, NotificationType } from "~/push";
 import { type Clock, PushNotConfiguredError, type PushSender, type PushSubscription } from "~/services";
 
 /**
@@ -65,6 +65,36 @@ export function saidYesClaims(db: D1Database, memberId: number, night: string): 
     ],
     events: ([claimed]) => (claimed.results.length > 0 ? [{ type: "said_yes" }] : []),
   };
+}
+
+/** The pushes the hourly scheduled run sends, at most once per Game Night each. */
+export type ScheduledType = Extract<NotificationType, "reminder" | "daily_summary">;
+
+/** The scheduler_state column holding the Game Night each scheduled push last claimed. */
+const CLAIM_COLUMNS: Record<ScheduledType, string> = {
+  reminder: "last_reminder_game_night",
+  daily_summary: "last_summary_game_night",
+};
+
+/**
+ * Claims the Game Night `night` for one scheduled push, on the single
+ * scheduler_state row, the way the Reset claims its night. True means this
+ * run owns the night and should send; false means the night, or a later one,
+ * was claimed already, so nothing is sent. Creating the row leaves the
+ * Reset's night NULL, as it was.
+ */
+export async function claimNight(db: D1Database, type: ScheduledType, night: string): Promise<boolean> {
+  const column = CLAIM_COLUMNS[type];
+  const claimed = await db
+    .prepare(
+      `INSERT INTO scheduler_state (id, ${column}) VALUES (1, ?1)
+       ON CONFLICT (id) DO UPDATE SET ${column} = excluded.${column}
+       WHERE scheduler_state.${column} IS NULL OR scheduler_state.${column} < excluded.${column}
+       RETURNING id`,
+    )
+    .bind(night)
+    .first();
+  return claimed !== null;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { addNights, gameNightOf, isGameNight, nightEnd, nightLabel, zoneDayTime } from "~/game-night";
+import { addNights, gameNightOf, isGameNight, nightEnd, nightLabel, zoneDayTime, zoneHour } from "~/game-night";
 
 describe("gameNightOf", () => {
   it.each([
@@ -17,6 +17,21 @@ describe("gameNightOf", () => {
     ["2027-01-01T02:00:00.000Z", "2027-01-01"],
   ])("puts %s in the Game Night of %s", (instant, night) => {
     expect(gameNightOf(new Date(instant))).toBe(night);
+  });
+});
+
+describe("zoneHour", () => {
+  it.each([
+    // 13:00 UTC is 17:00 UTC+4, the Reminder's hour; the minute before is still 16.
+    ["2026-11-03T12:59:59.999Z", 16],
+    ["2026-11-03T13:00:00.000Z", 17],
+    // 16:00 UTC is 20:00 UTC+4, the Daily Summary's hour.
+    ["2026-11-03T16:00:00.000Z", 20],
+    // Past midnight UTC+4 the hour starts again at 0.
+    ["2026-11-03T20:00:00.000Z", 0],
+    ["2026-11-03T19:59:00.000Z", 23],
+  ])("puts %s in UTC+4 hour %i", (instant, hour) => {
+    expect(zoneHour(new Date(instant))).toBe(hour);
   });
 });
 
