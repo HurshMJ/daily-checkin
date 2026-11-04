@@ -67,8 +67,13 @@ export function saidYesClaims(db: D1Database, memberId: number, night: string): 
   };
 }
 
-/** The longest payload a push may carry, in UTF-8 bytes; Web Push allows about 4 KB. */
-export const MAX_PAYLOAD_BYTES = 4096;
+/**
+ * The longest plaintext payload a push may carry, in UTF-8 bytes. Push
+ * services accept a 4096-byte encrypted body; RFC 8291 section 4 spends 86
+ * bytes on the aes128gcm header (16 salt, 4 record size, 1 key length, 65
+ * key), 16 on the AEAD tag and 1 on the padding delimiter: 4096 - 86 - 16 - 1.
+ */
+export const MAX_PAYLOAD_BYTES = 3993;
 
 /** What the service worker shows: the notification's title and body, the page a tap opens, and its tag. */
 export interface Payload {
@@ -81,7 +86,7 @@ export interface Payload {
 /** The payload as JSON, refusing one that would not fit in a push. */
 export function encodePayload(payload: Payload): string {
   const json = JSON.stringify(payload);
-  if (new TextEncoder().encode(json).length >= MAX_PAYLOAD_BYTES) throw new Error("Push payload too large");
+  if (new TextEncoder().encode(json).length > MAX_PAYLOAD_BYTES) throw new Error("Push payload too large");
   return json;
 }
 

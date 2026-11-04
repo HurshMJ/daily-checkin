@@ -66,7 +66,7 @@ async function inviteTo(app: ReturnType<typeof startApp>, groupId: number): Prom
  */
 function take(app: ReturnType<typeof startApp>): string[] {
   const lines = app.push.sent.map(({ subscription, payload }) => {
-    expect(new TextEncoder().encode(payload).length).toBeLessThan(MAX_PAYLOAD_BYTES);
+    expect(new TextEncoder().encode(payload).length).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES);
     const { title } = JSON.parse(payload) as { title: string };
     return `${subscription.endpoint.split("/").pop()}: ${title}`;
   });
@@ -351,7 +351,7 @@ describe("a new Game Night", () => {
 });
 
 describe("payloads", () => {
-  it("stay under 4 KB with the longest names", async () => {
+  it("stay within the limit with the longest names", async () => {
     const app = startApp();
     const owner = await app.createLogin({ username: "Ł".repeat(32), password: PASSWORD });
     const other = await app.createLogin({ username: "Bob", password: PASSWORD });
@@ -364,8 +364,20 @@ describe("payloads", () => {
     expect(take(app)).toEqual([`bob: Game On: ${"🎲".repeat(40)}`, `bob: ${"Ł".repeat(32)} said Yes`]);
   });
 
-  it("refuses a payload of 4 KB or more", () => {
-    expect(() => encodePayload({ title: "x".repeat(MAX_PAYLOAD_BYTES), body: "", url: "/", tag: "t" })).toThrow(
+  it("allow 3993 bytes of plaintext, the most RFC 8291 fits in a 4096-byte record, and refuse 3994", () => {
+    expect(MAX_PAYLOAD_BYTES).toBe(3993);
+    /** A payload whose JSON is exactly `bytes` long. */
+    const sized = (bytes: number) => {
+      const empty = JSON.stringify({ title: "", body: "", url: "/", tag: "t" }).length;
+      return { title: "x".repeat(bytes - empty), body: "", url: "/", tag: "t" };
+    };
+    expect(new TextEncoder().encode(encodePayload(sized(3993))).length).toBe(3993);
+    expect(() => encodePayload(sized(3994))).toThrow("Push payload too large");
+  });
+
+  it("count UTF-8 bytes, not characters", () => {
+    // 1331 three-byte characters are 3993 bytes on their own, so the JSON around them passes the limit.
+    expect(() => encodePayload({ title: "€".repeat(1331), body: "", url: "/", tag: "t" })).toThrow(
       "Push payload too large",
     );
   });
