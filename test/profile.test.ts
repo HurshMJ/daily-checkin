@@ -162,22 +162,52 @@ function toggles(card: string): [string, boolean][] {
 }
 
 describe("the Notifications card on the profile", () => {
-  it("comes first, with the three event toggles on by default and words for every state", async () => {
+  it("comes first, with all five toggles on by default and words for every state", async () => {
     const { bob } = await setUp();
     const card = notificationsCard(mainOf(await (await bob.get("/profile")).text()));
     expect(toggles(card)).toEqual([
       ["Someone said Yes", true],
       ["Game On", true],
       ["Game Off", true],
+      ["Reminder", true],
+      ["Daily Summary", true],
     ]);
     // Each switch says On and Off in words; CSS shows the one that applies.
-    expect(card.match(/<span class="toggle-switch" aria-hidden="true"><span class="toggle-on">On<\/span><span class="toggle-off">Off<\/span><\/span>/g)).toHaveLength(3);
+    expect(card.match(/<span class="toggle-switch" aria-hidden="true"><span class="toggle-on">On<\/span><span class="toggle-off">Off<\/span><\/span>/g)).toHaveLength(5);
     for (const input of card.match(/<input class="toggle-input"[^>]*>/g)!) {
       expect(input).toContain('type="checkbox"');
       expect(input).toContain('role="switch"');
     }
     expect(card).toContain(">Save notifications</button>");
-    expect(card).not.toContain("Reminder");
+  });
+
+  it("names and describes the Reminder and Daily Summary switches for assistive technology", async () => {
+    const { bob } = await setUp();
+    const card = notificationsCard(mainOf(await (await bob.get("/profile")).text()));
+    for (const [type, name, detail] of [
+      ["reminder", "Reminder", "At 5 PM if you have not answered for tonight."],
+      ["daily_summary", "Daily Summary", "At 8 PM, each of your Groups&#x27; answers for tonight."],
+    ]) {
+      expect(card).toContain(`<span class="toggle-name" id="toggle-${type}-name">${name}</span>`);
+      expect(card).toContain(`<span class="toggle-detail" id="toggle-${type}-detail">${detail}</span>`);
+      const input = card.match(new RegExp(`<input[^>]*name="${type}"[^>]*>`));
+      expect(input, type).not.toBeNull();
+      expect(input![0]).toContain(`aria-labelledby="toggle-${type}-name"`);
+      expect(input![0]).toContain(`aria-describedby="toggle-${type}-detail"`);
+    }
+  });
+
+  it("stops the Reminder for a Member who turns it off", async () => {
+    const { app, alice, bob } = await setUp();
+    await alice.subscribe("https://fcm.googleapis.com/fcm/send/alice");
+    await bob.subscribe("https://fcm.googleapis.com/fcm/send/bob");
+    await bob.post("/profile", { intent: "notifications", said_yes: "on", game_on: "on", game_off: "on", daily_summary: "on" });
+
+    app.clock.set("2026-11-03T13:00:00Z");
+    await app.runScheduled();
+    expect(app.push.sent.map(({ subscription }) => subscription.endpoint)).toEqual([
+      "https://fcm.googleapis.com/fcm/send/alice",
+    ]);
   });
 
   it("says turning push on needs JavaScript until the page's script runs, and asks for no permission on load", async () => {
@@ -197,6 +227,8 @@ describe("the Notifications card on the profile", () => {
       ["Someone said Yes", true],
       ["Game On", false],
       ["Game Off", true],
+      ["Reminder", false],
+      ["Daily Summary", false],
     ]);
 
     const again = notificationsCard(mainOf(await (await bob.get("/profile")).text()));
@@ -205,9 +237,18 @@ describe("the Notifications card on the profile", () => {
       ["Someone said Yes", true],
       ["Game On", false],
       ["Game Off", true],
+      ["Reminder", false],
+      ["Daily Summary", false],
     ]);
 
-    await bob.post("/profile", { intent: "notifications", said_yes: "on", game_on: "on", game_off: "on" });
+    await bob.post("/profile", {
+      intent: "notifications",
+      said_yes: "on",
+      game_on: "on",
+      game_off: "on",
+      reminder: "on",
+      daily_summary: "on",
+    });
     expect(toggles(notificationsCard(mainOf(await (await bob.get("/profile")).text()))).every(([, on]) => on)).toBe(true);
   });
 
@@ -220,8 +261,38 @@ describe("the Notifications card on the profile", () => {
 });
 
 describe("the service worker in public/sw.js", () => {
+  /** An open window of the app as `clients.matchAll` returns it. */
+  interface FakeWindow {
+    url: string;
+    focus(): Promise<FakeWindow>;
+    navigate(url: string): Promise<FakeWindow | null>;
+  }
+
+  /**
+   * A fake open window at `url`. A controlled window navigates; an
+   * uncontrolled one cannot, so its navigate rejects, as browsers do.
+   */
+  function fakeWindow(url: string, { controlled }: { controlled: boolean }) {
+    const visited: string[] = [];
+    const window: FakeWindow & { visited: string[]; focused: number } = {
+      url,
+      visited,
+      focused: 0,
+      async focus() {
+        window.focused += 1;
+        return window;
+      },
+      async navigate(to: string) {
+        if (!controlled) throw new TypeError("This service worker is not the client's active service worker.");
+        visited.push(to);
+        return window;
+      },
+    };
+    return window;
+  }
+
   /** Runs the script against a fake service worker global and returns its handlers and what they did. */
-  function load() {
+  function load(windows: FakeWindow[] = []) {
     const handlers: Record<string, (event: unknown) => void> = {};
     const shown: { title: string; options: Record<string, unknown> }[] = [];
     const opened: string[] = [];
@@ -237,7 +308,7 @@ describe("the service worker in public/sw.js", () => {
         },
       },
       clients: {
-        matchAll: async () => [],
+        matchAll: async () => windows,
         openWindow: async (url: string) => {
           opened.push(url);
         },
@@ -273,5 +344,38 @@ describe("the service worker in public/sw.js", () => {
     await sw.click("/groups/1");
     await sw.click("https://evil.example/");
     expect(sw.opened).toEqual(["https://daily-checkin.test/groups/1", "https://daily-checkin.test/"]);
+  });
+
+  it("navigates an open window of the app it controls to the page, opening no other window", async () => {
+    const open = fakeWindow("https://daily-checkin.test/profile", { controlled: true });
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    expect(open.focused).toBe(1);
+    expect(open.visited).toEqual(["https://daily-checkin.test/groups/1"]);
+    expect(sw.opened).toEqual([]);
+  });
+
+  it("opens the page in a new window when the open window is not controlled and cannot navigate", async () => {
+    const open = fakeWindow("https://daily-checkin.test/profile", { controlled: false });
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    await sw.click("https://evil.example/");
+    expect(sw.opened).toEqual(["https://daily-checkin.test/groups/1", "https://daily-checkin.test/"]);
+  });
+
+  it("opens the page in a new window when navigate gives no window back", async () => {
+    const open = fakeWindow("https://daily-checkin.test/profile", { controlled: true });
+    open.navigate = async () => null;
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    expect(sw.opened).toEqual(["https://daily-checkin.test/groups/1"]);
+  });
+
+  it("only focuses a window already on the page", async () => {
+    const open = fakeWindow("https://daily-checkin.test/groups/1", { controlled: false });
+    const sw = load([open]);
+    await sw.click("/groups/1");
+    expect(open.focused).toBe(1);
+    expect(sw.opened).toEqual([]);
   });
 });

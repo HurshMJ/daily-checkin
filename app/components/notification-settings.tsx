@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Form } from "react-router";
 
-import { decodeBase64Url, EVENT_TYPES, type EventType } from "~/push";
+import { decodeBase64Url, NOTIFICATION_TYPES, type NotificationPrefs } from "~/push";
 
 import { Notice } from "./notice";
 import { SubmitButton } from "./submit-button";
@@ -9,16 +9,18 @@ import { SubmitButton } from "./submit-button";
 /** The profile form's intent for saving the toggles. */
 export const NOTIFICATIONS_INTENT = "notifications";
 
-/** Each event toggle's name and the line that says when it fires. */
-const TOGGLES: Record<EventType, { name: string; detail: string }> = {
+/** Each toggle's name and the line that says when it fires. */
+const TOGGLES: Record<keyof NotificationPrefs, { name: string; detail: string }> = {
   said_yes: { name: "Someone said Yes", detail: "When someone in one of your Groups answers Yes." },
   game_on: { name: "Game On", detail: "When one of your Groups reaches its threshold." },
   game_off: { name: "Game Off", detail: "When a Group you said Yes in drops below it." },
+  reminder: { name: "Reminder", detail: "At 5 PM if you have not answered for tonight." },
+  daily_summary: { name: "Daily Summary", detail: "At 8 PM, each of your Groups' answers for tonight." },
 };
 
 /** Reads the posted toggles: a checked box sends "on", an unchecked one sends nothing. */
-export function togglesFrom(form: FormData): Record<EventType, boolean> {
-  return Object.fromEntries(EVENT_TYPES.map((type) => [type, form.get(type) === "on"])) as Record<EventType, boolean>;
+export function togglesFrom(form: FormData): NotificationPrefs {
+  return Object.fromEntries(NOTIFICATION_TYPES.map((type) => [type, form.get(type) === "on"])) as NotificationPrefs;
 }
 
 /**
@@ -180,7 +182,7 @@ export function NotificationsCard({
 }: {
   publicKey: string;
   onHere: boolean;
-  prefs: Record<EventType, boolean>;
+  prefs: NotificationPrefs;
   saved: boolean;
   saving: boolean;
 }) {
@@ -191,7 +193,7 @@ export function NotificationsCard({
       <Form method="post" className="page-form">
         <input type="hidden" name="intent" value={NOTIFICATIONS_INTENT} />
         <ul className="list">
-          {EVENT_TYPES.map((type) => (
+          {NOTIFICATION_TYPES.map((type) => (
             <li key={type}>
               <label className="toggle">
                 <span className="toggle-text">

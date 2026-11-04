@@ -29,7 +29,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule, the Group page read) and Check-ins (Availability, Note, the Game On statement, tonight's Boards) |
 | `app/invites.ts` | Invites: the label rule, Owner-only make, list and cancel, and joining a Group with an Invite |
 | `app/push.ts` | Push subscriptions (the endpoint check at the trust boundary, save and delete) and notification toggles |
-| `app/notifications.ts` | Notification rules: the "someone said Yes" claim, recipients, payloads, and delivery after the response |
+| `app/notifications.ts` | Notification rules: the "someone said Yes" claim, recipients, payloads, delivery after the response, and the scheduled Reminder and Daily Summary |
 | `app/web-push.ts` | Web Push on WebCrypto: aes128gcm payload encryption and the VAPID ES256 token |
 | `public/sw.js` | The service worker: shows each push and opens its page on a tap |
 | `app/text-rules.ts` | The one counting rule for usernames, Group names and Notes: trimmed, NFC, code points, no invisible characters |
@@ -207,19 +207,21 @@ and the crossing sends Game On or Game Off like a Check-in would (see
 
 A Member turns push on from the **Notifications** card on their profile. The
 browser asks for permission only after a tap on **Turn on push**, and the
-device's subscription is stored for that login session. On iPhone, push works
+device's subscription is stored for that login session, one per session. On iPhone, push works
 only in the app added to the Home Screen, so Safari outside it shows "Add to
 Home Screen first" instead of the button. **Turn off on this device** forgets
 the device; logging the device out does too, and Log out everywhere and a
 password change forget the other devices.
 
-Three event types, each with a switch on the card, all on by default:
+Five types, each with a switch on the card, all on by default:
 
 | Type | Sent when | To |
 |------|-----------|----|
 | Someone said Yes | a Member's Availability becomes Yes, once per Member per Game Night | the other Members of all their Groups, once each |
 | Game On | a Group first reaches its threshold in a Game Night | every Member of the Group |
 | Game Off | a Group that was Game On first drops below it | the Group's Members at Yes now |
+| Reminder | the 17:00 UTC+4 hourly run, once per Game Night | each Member in at least one Group with no Check-in tonight |
+| Daily Summary | the 20:00 UTC+4 hourly run, once per Group per Game Night, for each Group with a Check-in tonight | every Member of the Group |
 
 Game On and Game Off fire the same way for a Check-in, a threshold change, a
 join, a leave or a removal, at most once each per Group per night. Nobody is
@@ -227,11 +229,25 @@ sent a push about their own action. A Note edit or a join never sends
 "someone said Yes". There are no quiet hours. Each send is claimed in the same D1
 batch as the change, so two racing requests never both send it.
 
-Pushes go out after the response (`ctx.waitUntil`), so a push service never
-slows or fails a Member's request. A 404 or 410 deletes that subscription;
+The Daily Summary's title gives the Group's counts, such as "Friday: 3 Yes,
+1 Maybe, 2 no answer", and its body names the Members by Availability in Board
+order, without Notes. When the whole list would not fit the 3993-byte push
+payload limit, it names as many as fit and ends with "+N more". A tap opens the
+Group page; a tap on the Reminder opens Tonight.
+
+The Reminder and the Daily Summary go out only in their own hourly run: a
+missed run is skipped, never caught up. Each claims tonight in
+`scheduler_state` before it sends, so a repeated run sends nothing, and a run
+that fails after its claim loses that night's pushes rather than sending them
+late.
+
+Event pushes go out after the response (`ctx.waitUntil`), so a push service
+never slows or fails a Member's request; scheduled pushes are awaited inside
+the hourly run. A 404 or 410 deletes that subscription;
 other failures are logged once per event, never with the endpoint. Each push
 is one subrequest, so Workers Free (50 subrequests per invocation) bounds how
-many devices one change can reach.
+many devices one change, or one hourly run, can reach; sends past it fail and
+are logged as a count.
 
 The server accepts a subscription only with an `https` endpoint of at most 2048
 characters on a known push service (`fcm.googleapis.com`,
@@ -270,7 +286,10 @@ the execution context into React Router's context under `appContext`, so a
 loader or action reads them with `context.get(appContext)`. The `scheduled`
 handler receives the same services directly. Each hourly run calls the Reset,
 `createHistory().reset()` in `app/history.ts`, which freezes any ended Game
-Night into History and does nothing until a new Game Night has started.
+Night into History and does nothing until a new Game Night has started, then
+the scheduled pushes, `createNotifications().sendScheduled()` in
+`app/notifications.ts`, which send the Reminder or the Daily Summary when the
+run's UTC+4 hour is theirs. The pushes run even when the Reset fails.
 
 Every Game Night comes from `gameNightOf(clock.now())`, so moving the test
 clock across 02:00 UTC (06:00 UTC+4) starts a new night.

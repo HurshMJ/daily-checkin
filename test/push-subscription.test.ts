@@ -48,6 +48,34 @@ describe("saving a push subscription", () => {
     expect(await owners()).toEqual({ [phone]: "Bob" });
   });
 
+  it("keeps one subscription per session: a new endpoint replaces the session's old one", async () => {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+    const laptop = await logIn(app, "Alice");
+    const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
+    const renewed = pushEndpoint("alice-phone-renewed");
+    await alice.subscribe(phone);
+    await laptop.subscribe(pushEndpoint("alice-laptop"));
+    await bob.subscribe(pushEndpoint("bob-phone"));
+
+    await alice.subscribe(renewed);
+    expect(await owners()).toEqual({
+      [renewed]: "Alice",
+      [pushEndpoint("alice-laptop")]: "Alice",
+      [pushEndpoint("bob-phone")]: "Bob",
+    });
+  });
+
+  it("moves an endpoint to the session that saves it last, leaving that session one subscription", async () => {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+    const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
+    await alice.subscribe(phone);
+    await bob.subscribe(pushEndpoint("bob-phone"));
+    await bob.subscribe(phone);
+    expect(await owners()).toEqual({ [phone]: "Bob" });
+  });
+
   it.each([
     ["an http endpoint", { endpoint: "http://fcm.googleapis.com/fcm/send/x" }],
     ["an unknown host", { endpoint: "https://evil.example/push" }],

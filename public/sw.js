@@ -23,7 +23,9 @@ self.addEventListener("push", (event) => {
 });
 
 // A tap focuses an open window of the app on the payload's page, or opens
-// one. Only pages of this app are ever opened.
+// one. Only pages of this app are ever opened. A window this worker does not
+// control cannot be navigated (navigate rejects or gives null), so the page
+// opens in a new window instead.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   let url = new URL("/", self.location.origin);
@@ -41,7 +43,8 @@ self.addEventListener("notificationclick", (event) => {
       const open = windows.find((client) => new URL(client.url).origin === self.location.origin);
       if (open) {
         await open.focus();
-        return open.navigate(url.href);
+        const navigated = await open.navigate(url.href).catch(() => null);
+        if (navigated) return navigated;
       }
       return self.clients.openWindow(url.href);
     })(),

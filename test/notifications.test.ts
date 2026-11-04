@@ -3,7 +3,8 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createInvites } from "~/invites";
-import { encodePayload, MAX_PAYLOAD_BYTES } from "~/notifications";
+import { createPush } from "~/push";
+import { claimNight, encodePayload, MAX_PAYLOAD_BYTES, type Payload } from "~/notifications";
 
 import { pushEndpoint, startApp } from "./harness";
 
@@ -66,7 +67,7 @@ async function inviteTo(app: ReturnType<typeof startApp>, groupId: number): Prom
  */
 function take(app: ReturnType<typeof startApp>): string[] {
   const lines = app.push.sent.map(({ subscription, payload }) => {
-    expect(new TextEncoder().encode(payload).length).toBeLessThan(MAX_PAYLOAD_BYTES);
+    expect(new TextEncoder().encode(payload).length).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES);
     const { title } = JSON.parse(payload) as { title: string };
     return `${subscription.endpoint.split("/").pop()}: ${title}`;
   });
@@ -351,7 +352,7 @@ describe("a new Game Night", () => {
 });
 
 describe("payloads", () => {
-  it("stay under 4 KB with the longest names", async () => {
+  it("stay within the limit with the longest names", async () => {
     const app = startApp();
     const owner = await app.createLogin({ username: "Ł".repeat(32), password: PASSWORD });
     const other = await app.createLogin({ username: "Bob", password: PASSWORD });
@@ -364,8 +365,20 @@ describe("payloads", () => {
     expect(take(app)).toEqual([`bob: Game On: ${"🎲".repeat(40)}`, `bob: ${"Ł".repeat(32)} said Yes`]);
   });
 
-  it("refuses a payload of 4 KB or more", () => {
-    expect(() => encodePayload({ title: "x".repeat(MAX_PAYLOAD_BYTES), body: "", url: "/", tag: "t" })).toThrow(
+  it("allow 3993 bytes of plaintext, the most RFC 8291 fits in a 4096-byte record, and refuse 3994", () => {
+    expect(MAX_PAYLOAD_BYTES).toBe(3993);
+    /** A payload whose JSON is exactly `bytes` long. */
+    const sized = (bytes: number) => {
+      const empty = JSON.stringify({ title: "", body: "", url: "/", tag: "t" }).length;
+      return { title: "x".repeat(bytes - empty), body: "", url: "/", tag: "t" };
+    };
+    expect(new TextEncoder().encode(encodePayload(sized(3993))).length).toBe(3993);
+    expect(() => encodePayload(sized(3994))).toThrow("Push payload too large");
+  });
+
+  it("count UTF-8 bytes, not characters", () => {
+    // 1331 three-byte characters are 3993 bytes on their own, so the JSON around them passes the limit.
+    expect(() => encodePayload({ title: "€".repeat(1331), body: "", url: "/", tag: "t" })).toThrow(
       "Push payload too large",
     );
   });
@@ -408,5 +421,295 @@ describe("a night already on when migration 0007 is applied", () => {
     await answer(devices.Carol, "no");
     await answer(devices.Carol, "yes");
     expect(take(app)).toEqual([]);
+  });
+});
+
+describe("claiming a Game Night for a scheduled push", () => {
+  /** The single scheduler_state row, or null before anything has claimed it. */
+  async function state() {
+    return env.DB.prepare(
+      "SELECT last_reset_game_night, last_reminder_game_night, last_summary_game_night FROM scheduler_state WHERE id = 1",
+    ).first();
+  }
+
+  it("claims a night once, and only a later night after it", async () => {
+    expect(await claimNight(env.DB, "reminder", "2026-11-03")).toBe(true);
+    expect(await claimNight(env.DB, "reminder", "2026-11-03")).toBe(false);
+    expect(await claimNight(env.DB, "reminder", "2026-11-02")).toBe(false);
+    expect(await claimNight(env.DB, "reminder", "2026-11-04")).toBe(true);
+    expect(await state()).toEqual({
+      last_reset_game_night: null,
+      last_reminder_game_night: "2026-11-04",
+      last_summary_game_night: null,
+    });
+  });
+
+  it("claims the Reminder and the Daily Summary apart, keeping the Reset's night", async () => {
+    await env.DB.prepare("INSERT INTO scheduler_state (id, last_reset_game_night) VALUES (1, '2026-11-03')").run();
+    expect(await claimNight(env.DB, "daily_summary", "2026-11-03")).toBe(true);
+    expect(await claimNight(env.DB, "reminder", "2026-11-03")).toBe(true);
+    expect(await claimNight(env.DB, "daily_summary", "2026-11-03")).toBe(false);
+    expect(await state()).toEqual({
+      last_reset_game_night: "2026-11-03",
+      last_reminder_game_night: "2026-11-03",
+      last_summary_game_night: "2026-11-03",
+    });
+  });
+});
+
+describe("migration 0008", () => {
+  it("adds empty claim columns to a scheduler_state row that already exists", async () => {
+    await reset();
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((migration) => !migration.name.startsWith("0008")));
+    await env.DB.prepare("INSERT INTO scheduler_state (id, last_reset_game_night) VALUES (1, '2026-11-03')").run();
+
+    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS);
+    expect(
+      await env.DB.prepare(
+        "SELECT last_reset_game_night, last_reminder_game_night, last_summary_game_night FROM scheduler_state",
+      ).all(),
+    ).toMatchObject({
+      results: [{ last_reset_game_night: "2026-11-03", last_reminder_game_night: null, last_summary_game_night: null }],
+    });
+  });
+});
+
+/** 17:00 UTC+4 on 3 Nov 2026: the hourly run that sends the Reminder for Game Night 2026-11-03. */
+const REMINDER_3_NOV = "2026-11-03T13:00:00Z";
+/** 20:00 UTC+4 on 3 Nov 2026: the hourly run that sends the Daily Summary. */
+const SUMMARY_3_NOV = "2026-11-03T16:00:00Z";
+
+/** The pushes sent since the last call, sorted by recipient, with their whole payload, and forgets them. */
+function takePayloads(app: ReturnType<typeof startApp>) {
+  const pushes = app.push.sent.map(({ subscription, payload }) => {
+    expect(new TextEncoder().encode(payload).length).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES);
+    return { to: subscription.endpoint.split("/").pop()!, ...(JSON.parse(payload) as Payload) };
+  });
+  app.push.sent.length = 0;
+  return pushes.sort((a, b) => a.to.localeCompare(b.to));
+}
+
+/** Runs the hourly job at `iso`. */
+async function runAt(app: ReturnType<typeof startApp>, iso: string) {
+  app.clock.set(iso);
+  await app.runScheduled();
+}
+
+describe("the Reminder", () => {
+  it("goes at 17:00 UTC+4 to each device of a Member in a Group who has not answered tonight", async () => {
+    const { app, Alice, Bob } = await setUp();
+    await answer(Alice, "yes");
+    await answer(Bob, "maybe");
+    // Carol has a second device with push on; Dave, in no Group, never gets a Reminder.
+    const laptop = app.device();
+    await laptop.post("/login", { username: "Carol", password: PASSWORD });
+    await laptop.subscribe(pushEndpoint("carol-laptop"));
+    take(app);
+
+    await runAt(app, REMINDER_3_NOV);
+    expect(takePayloads(app)).toEqual([
+      {
+        to: "carol",
+        title: "Are you in tonight?",
+        body: "You have not answered for tonight yet. Open Tonight to say Yes, Maybe or No.",
+        url: "/",
+        tag: "reminder-2026-11-03",
+      },
+      expect.objectContaining({ to: "carol-laptop", title: "Are you in tonight?", tag: "reminder-2026-11-03" }),
+    ]);
+  });
+
+  it.each(["yes", "maybe", "no"] as const)("does not go to a Member who answered %s", async (availability) => {
+    const { app, Alice, Bob, Carol } = await setUp();
+    await answer(Alice, "yes");
+    await answer(Carol, "yes");
+    await answer(Bob, availability);
+    take(app);
+    await runAt(app, REMINDER_3_NOV);
+    expect(take(app)).toEqual([]);
+  });
+
+  it("goes only in the 17:00 UTC+4 run: a missed run is not caught up and a repeat sends nothing", async () => {
+    const { app } = await setUp();
+    take(app);
+    for (const iso of ["2026-11-03T12:00:00Z", "2026-11-03T14:00:00Z", "2026-11-03T15:00:00Z"]) {
+      await runAt(app, iso);
+      expect(take(app), iso).toEqual([]);
+    }
+
+    // The next night's 17:00 run sends; running it again, or later that hour, does not.
+    await runAt(app, "2026-11-04T13:00:00Z");
+    expect(take(app)).toEqual(["alice: Are you in tonight?", "bob: Are you in tonight?", "carol: Are you in tonight?"]);
+    await runAt(app, "2026-11-04T13:00:00Z");
+    await runAt(app, "2026-11-04T13:30:00Z");
+    expect(take(app)).toEqual([]);
+  });
+
+  it("skips a Member who turned the Reminder off and a device whose session has expired", async () => {
+    const { app } = await setUp();
+    await createPush({ env, clock: app.clock }).setPrefs(await idOf("members", "username", "Alice"), { reminder: false });
+    await env.DB.prepare("UPDATE sessions SET expires_at = ?1 WHERE member_id = ?2")
+      .bind("2026-11-03T12:30:00.000Z", await idOf("members", "username", "Bob"))
+      .run();
+    take(app);
+    await runAt(app, REMINDER_3_NOV);
+    expect(take(app)).toEqual(["carol: Are you in tonight?"]);
+  });
+
+  it("deletes a device the push service says is gone and logs failures as a count, never the endpoint", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { app } = await setUp({
+      pushStatuses: { [endpointOf("Alice")]: 410, [endpointOf("Bob")]: new TypeError("fetch failed") },
+    });
+    take(app);
+    await runAt(app, REMINDER_3_NOV);
+    expect(take(app)).toEqual(["alice: Are you in tonight?", "bob: Are you in tonight?", "carol: Are you in tonight?"]);
+    const left = await env.DB.prepare("SELECT endpoint FROM push_subscriptions ORDER BY endpoint").all<{ endpoint: string }>();
+    expect(left.results.map((row) => row.endpoint)).toEqual([endpointOf("Bob"), endpointOf("Carol"), endpointOf("Dave")]);
+    expect(errors).toHaveBeenCalledWith("Push reminder: 1 of 3 not sent (TypeError)");
+    expect(JSON.stringify(errors.mock.calls)).not.toContain("fcm.googleapis.com");
+  });
+});
+
+describe("the Daily Summary", () => {
+  it("goes at 20:00 UTC+4 to every Member of a Group with a Check-in, naming each Member by Availability", async () => {
+    const { app, Alice, Bob, Carol, Dave, friday } = await setUp();
+    // Dave owns "Solo" and has not answered; Carol is in it too.
+    await Dave.post("/groups/new", { name: "Solo" });
+    await addMember(app, await idOf("groups", "name", "Solo"), "Carol");
+    await answer(Bob, "yes");
+    await answer(Alice, "maybe");
+    await answer(Carol, "no");
+    take(app);
+
+    await runAt(app, SUMMARY_3_NOV);
+    const summary = {
+      title: "Friday: 1 Yes, 1 Maybe, 1 No",
+      body: "Yes: Bob\nMaybe: Alice\nNo: Carol",
+      url: `/groups/${friday}`,
+      tag: `daily-summary-${friday}-2026-11-03`,
+    };
+    const solo = await idOf("groups", "name", "Solo");
+    expect(takePayloads(app)).toEqual([
+      { to: "alice", ...summary },
+      { to: "bob", ...summary },
+      { to: "carol", ...summary },
+      {
+        to: "carol",
+        title: "Solo: 1 No, 1 no answer",
+        body: "No: Carol\nNo answer: Dave",
+        url: `/groups/${solo}`,
+        tag: `daily-summary-${solo}-2026-11-03`,
+      },
+      {
+        to: "dave",
+        title: "Solo: 1 No, 1 no answer",
+        body: "No: Carol\nNo answer: Dave",
+        url: `/groups/${solo}`,
+        tag: `daily-summary-${solo}-2026-11-03`,
+      },
+    ]);
+  });
+
+  it("does not go for a Group with no Check-in tonight", async () => {
+    const { app } = await setUp();
+    take(app);
+    await runAt(app, SUMMARY_3_NOV);
+    expect(take(app)).toEqual([]);
+  });
+
+  it("goes only in the 20:00 UTC+4 run: a missed run is not caught up and a repeat sends nothing", async () => {
+    const { app, Alice } = await setUp();
+    await answer(Alice, "yes");
+    take(app);
+    for (const iso of ["2026-11-03T15:00:00Z", "2026-11-03T17:00:00Z"]) {
+      await runAt(app, iso);
+      expect(take(app), iso).toEqual([]);
+    }
+
+    // The next night's 20:00 run sends; running it again, or later that hour, does not.
+    app.clock.set("2026-11-04T12:00:00Z");
+    await answer(Alice, "yes");
+    take(app);
+    await runAt(app, "2026-11-04T16:00:00Z");
+    expect(take(app)).toEqual([
+      "alice: Friday: 1 Yes, 2 no answer",
+      "bob: Friday: 1 Yes, 2 no answer",
+      "carol: Friday: 1 Yes, 2 no answer",
+    ]);
+    await runAt(app, "2026-11-04T16:00:00Z");
+    await runAt(app, "2026-11-04T16:45:00Z");
+    expect(take(app)).toEqual([]);
+  });
+
+  it("skips a Member who turned the Daily Summary off", async () => {
+    const { app, Alice } = await setUp();
+    await createPush({ env, clock: app.clock }).setPrefs(await idOf("members", "username", "Bob"), { daily_summary: false });
+    await answer(Alice, "yes");
+    take(app);
+    await runAt(app, SUMMARY_3_NOV);
+    expect(take(app)).toEqual([
+      "alice: Friday: 1 Yes, 2 no answer",
+      "carol: Friday: 1 Yes, 2 no answer",
+    ]);
+  });
+
+  it("fits a Group of 99 Members with the longest names, ending with how many more there are", async () => {
+    const { app, Alice, friday } = await setUp();
+    const now = app.clock.now().toISOString();
+    // 96 more Members with 32-character names of two-byte letters, all Maybe.
+    const statements = [];
+    for (let i = 0; i < 96; i++) {
+      const username = `${"Ł".repeat(30)}${String(i).padStart(2, "0")}`;
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO members (username, username_lower, colour, password_hash, password_salt, password_iterations, created_at)
+           VALUES (?1, lower(?1), 'blue', 'x', 'x', 1, ?2)`,
+        ).bind(username, now),
+        env.DB.prepare(
+          "INSERT INTO memberships (group_id, member_id, joined_at) SELECT ?1, id, ?2 FROM members WHERE username = ?3",
+        ).bind(friday, now, username),
+        env.DB.prepare(
+          "INSERT INTO checkins (member_id, game_night, availability, updated_at) SELECT id, '2026-11-03', 'maybe', ?1 FROM members WHERE username = ?2",
+        ).bind(now, username),
+      );
+    }
+    await env.DB.batch(statements);
+    await answer(Alice, "yes");
+    take(app);
+
+    await runAt(app, SUMMARY_3_NOV);
+    const [first] = takePayloads(app);
+    expect(first.title).toBe("Friday: 1 Yes, 96 Maybe, 2 no answer");
+    // Close to the limit: no room was left for another 64-byte name.
+    const { to: _, ...payload } = first;
+    expect(new TextEncoder().encode(encodePayload(payload)).length).toBeGreaterThan(MAX_PAYLOAD_BYTES - 70);
+    const more = first.body.match(/ \+([0-9]+) more$/);
+    expect(more, first.body).not.toBeNull();
+    const shown = first.body.replace(/ \+[0-9]+ more$/, "").split("\n").flatMap((line) => line.replace(/^[^:]*: /, "").split(", "));
+    expect(shown[0]).toBe("Alice");
+    expect(shown.length + Number(more![1])).toBe(99);
+  });
+});
+
+describe("the hourly run", () => {
+  it("still runs the Reset when a scheduled push fails", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { app } = await setUp();
+    take(app);
+    await env.DB.prepare("DROP TABLE push_subscriptions").run();
+    await runAt(app, REMINDER_3_NOV);
+    expect(errors).toHaveBeenCalledWith("Push reminder: delivery failed (Error)");
+    const state = await env.DB.prepare("SELECT last_reset_game_night AS night FROM scheduler_state").first();
+    expect(state).toEqual({ night: "2026-11-03" });
+  });
+
+  it("still sends the Reminder when the Reset fails, and reports the Reset's failure", async () => {
+    const { app } = await setUp();
+    take(app);
+    await env.DB.batch([env.DB.prepare("DROP TABLE history_rows"), env.DB.prepare("DROP TABLE history_nights")]);
+    app.clock.set(REMINDER_3_NOV);
+    await expect(app.runScheduled()).rejects.toThrow();
+    expect(take(app)).toEqual(["alice: Are you in tonight?", "bob: Are you in tonight?", "carol: Are you in tonight?"]);
   });
 });
