@@ -4,7 +4,6 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createInvites } from "~/invites";
 import { encodePayload, MAX_PAYLOAD_BYTES } from "~/notifications";
-import { createPush } from "~/push";
 
 import { pushEndpoint, startApp } from "./harness";
 
@@ -270,12 +269,10 @@ describe("Game On and Game Off from threshold and membership changes", () => {
 });
 
 describe("notification toggles and devices", () => {
-  it("never sends a type to a Member who turned it off, and still sends it to the others", async () => {
+  it("never sends a type to a Member who turned it off on the profile, and still sends it to the others", async () => {
     const { app, Alice, Bob, Carol } = await setUp();
-    await createPush({ env, clock: app.clock }).setPrefs(await idOf("members", "username", "Bob"), {
-      said_yes: false,
-      game_on: false,
-    });
+    // Bob leaves only Game Off checked.
+    expect((await Bob.post("/profile", { intent: "notifications", game_off: "on" })).status).toBe(200);
     await answer(Alice, "yes");
     await answer(Carol, "yes");
     take(app);
