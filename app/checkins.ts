@@ -65,7 +65,7 @@ const ROW_ORDER: Record<Availability | "none", number> = { yes: 0, maybe: 1, no:
 
 /**
  * Orders two Shown names ignoring case, then as typed, so the order is stable
- * between visits. Boards, History and the Group page sort Members with it.
+ * between visits. Boards and History sort Members with it.
  */
 export function compareShownNames(a: string, b: string): number {
   return a.toLowerCase().localeCompare(b.toLowerCase()) || a.localeCompare(b);

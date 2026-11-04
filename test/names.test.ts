@@ -96,6 +96,12 @@ describe("name rules", () => {
     expect(displayNameError("🎲‍")).toContain("invisible characters");
     expect(displayNameError("‍🎲")).toContain("invisible characters");
     expect(displayNameError("ab\u{E0067}\u{E007F}")).toContain("invisible characters");
+    // Tags only spell a flag after the black flag U+1F3F4.
+    expect(displayNameError("Bob👍\u{E0061}\u{E0062}\u{E007F}")).toContain("invisible characters");
+    expect(displayNameError("©\u{E0061}\u{E0062}\u{E007F}")).toContain("invisible characters");
+    // A selector or skin tone counts only after an emoji.
+    expect(displayNameError("Bob\u{FE0F}\u{200D}👍")).toContain("invisible characters");
+    expect(displayNameError("Bob🏽\u{200D}👍")).toContain("invisible characters");
     expect(displayNameError("Ali​ce")).toContain("invisible characters");
     expect(displayNameError("Ali\tce")).toContain("invisible characters");
   });

@@ -26,12 +26,13 @@ export function hasInvisible(text: string): boolean {
 // Inside an emoji sequence two format characters are part of the emoji, not
 // hidden text: the zero-width joiner (U+200D) that joins 👨 and 👩 into 👨‍👩‍👧,
 // and the tag characters (U+E0020 to U+E007F) that spell a subdivision flag
-// such as 🏴󠁧󠁢󠁳󠁣󠁴󠁿. A joiner counts as inside a sequence when an emoji (or the
-// emoji's skin tone or U+FE0F presentation selector) comes before it and an
-// emoji comes after it; tags count when they follow an emoji and end with the
-// cancel tag U+E007F.
-const EMOJI_JOINER = /(?<=[\p{Extended_Pictographic}\p{Emoji_Modifier}\u{FE0F}])\u{200D}(?=\p{Extended_Pictographic})/gu;
-const EMOJI_TAGS = /(?<=\p{Extended_Pictographic})[\u{E0020}-\u{E007E}]+\u{E007F}/gu;
+// such as 🏴󠁧󠁢󠁳󠁣󠁴󠁿. A joiner counts as inside a sequence when an emoji, optionally
+// followed by its skin tone or U+FE0F presentation selector, comes before it
+// and an emoji comes after it; tags count when they follow the black flag
+// U+1F3F4 and end with the cancel tag U+E007F.
+const EMOJI_JOINER =
+  /(?<=\p{Extended_Pictographic}[\p{Emoji_Modifier}\u{FE0F}]?)\u{200D}(?=\p{Extended_Pictographic})/gu;
+const EMOJI_TAGS = /(?<=\u{1F3F4})[\u{E0020}-\u{E007E}]+\u{E007F}/gu;
 
 /**
  * True when the text holds a control or invisible format character outside
