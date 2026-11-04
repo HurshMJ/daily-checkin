@@ -89,7 +89,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
   if (form.get("intent") === NAMES_INTENT) {
     const valid = validateProfileNames(form);
-    const result = valid.ok ? await authFor(context).saveProfileNames(member, valid.value) : valid;
+    const result = valid.ok ? await authFor(context).saveProfileNames(member, valid.value, clientIp(request)) : valid;
     if (result.ok) return redirect("/profile?saved=1", 303);
     const values = {
       username: String(form.get("username") ?? ""),

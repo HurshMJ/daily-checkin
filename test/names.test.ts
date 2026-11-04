@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createAuth, type CurrentMember } from "~/auth/auth";
+import { createLoginLimits, IP_FAILURE_LIMIT } from "~/auth/login-limits";
 import { displayNameError, nameKey, shownName, usernameKey } from "~/auth/rules";
 
 import { startApp } from "./harness";
@@ -35,6 +36,13 @@ async function nameKeys(): Promise<[string, number][]> {
     member_id: number;
   }>();
   return results.map((row) => [row.name_key, row.member_id]);
+}
+
+async function ipFailures(): Promise<number> {
+  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM login_failures WHERE kind = 'ip' AND key = ?1")
+    .bind(IP)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
 }
 
 async function memberRow(id: number) {
@@ -107,7 +115,7 @@ describe("createLogin and name_keys", () => {
 
   it("refuses a username equal to another Member's Display Name, in any case", async () => {
     const { app, auth, members } = await setup("Alice");
-    expect(await auth.saveProfileNames(members[0], { username: "Alice", displayName: "Ace", colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(members[0], { username: "Alice", displayName: "Ace", colour: "blue" }, IP)).toEqual({
       ok: true,
     });
     const token = await app.issueSetupLink("second");
@@ -132,7 +140,7 @@ describe("saveProfileNames", () => {
     const { auth, members } = await setup("Alice");
     const [alice] = members;
 
-    expect(await auth.saveProfileNames(alice, { username: "Alice", displayName: "Ace 🎯", colour: "pink" })).toEqual({
+    expect(await auth.saveProfileNames(alice, { username: "Alice", displayName: "Ace 🎯", colour: "pink" }, IP)).toEqual({
       ok: true,
     });
 
@@ -158,7 +166,7 @@ describe("saveProfileNames", () => {
   it("allows the Member's own username as their Display Name, holding one key", async () => {
     const { auth, members } = await setup("Alice");
 
-    expect(await auth.saveProfileNames(members[0], { username: "Alice", displayName: "ALICE", colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(members[0], { username: "Alice", displayName: "ALICE", colour: "blue" }, IP)).toEqual({
       ok: true,
     });
 
@@ -169,10 +177,10 @@ describe("saveProfileNames", () => {
   it("refuses a Display Name equal to another Member's username or Display Name, ignoring case", async () => {
     const { auth, members } = await setup("Alice", "Bob");
     const [alice, bob] = members;
-    await auth.saveProfileNames(bob, { username: "Bob", displayName: "Bobby", colour: "blue" });
+    await auth.saveProfileNames(bob, { username: "Bob", displayName: "Bobby", colour: "blue" }, IP);
 
-    const asUsername = await auth.saveProfileNames(alice, { username: "Alice", displayName: "BOB", colour: "blue" });
-    const asDisplayName = await auth.saveProfileNames(alice, { username: "Alice", displayName: "bobby", colour: "blue" });
+    const asUsername = await auth.saveProfileNames(alice, { username: "Alice", displayName: "BOB", colour: "blue" }, IP);
+    const asDisplayName = await auth.saveProfileNames(alice, { username: "Alice", displayName: "bobby", colour: "blue" }, IP);
 
     expect(asUsername).toEqual({ ok: false, errors: { displayName: "That name is taken." } });
     expect(asDisplayName).toEqual({ ok: false, errors: { displayName: "That name is taken." } });
@@ -181,9 +189,9 @@ describe("saveProfileNames", () => {
   it("refuses a username equal to another Member's Display Name", async () => {
     const { auth, members } = await setup("Alice", "Bob");
     const [alice, bob] = members;
-    await auth.saveProfileNames(bob, { username: "Bob", displayName: "Bobby", colour: "blue" });
+    await auth.saveProfileNames(bob, { username: "Bob", displayName: "Bobby", colour: "blue" }, IP);
 
-    expect(await auth.saveProfileNames(alice, { username: "Bobby", displayName: null, colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(alice, { username: "Bobby", displayName: null, colour: "blue" }, IP)).toEqual({
       ok: false,
       errors: { username: "That username is taken." },
     });
@@ -195,7 +203,7 @@ describe("saveProfileNames", () => {
     const keysBefore = await nameKeys();
     const rowBefore = await memberRow(alice.id);
 
-    const result = await auth.saveProfileNames(alice, { username: "Alicia", displayName: "bob", colour: "pink" });
+    const result = await auth.saveProfileNames(alice, { username: "Alicia", displayName: "bob", colour: "pink" }, IP);
 
     expect(result).toEqual({ ok: false, errors: { displayName: "That name is taken." } });
     expect(await nameKeys()).toEqual(keysBefore);
@@ -205,13 +213,13 @@ describe("saveProfileNames", () => {
   it("frees the Display Name's key when it is cleared", async () => {
     const { auth, members } = await setup("Alice", "Bob");
     const [alice, bob] = members;
-    await auth.saveProfileNames(alice, { username: "Alice", displayName: "Ace", colour: "blue" });
+    await auth.saveProfileNames(alice, { username: "Alice", displayName: "Ace", colour: "blue" }, IP);
 
-    expect(await auth.saveProfileNames(alice, { username: "Alice", displayName: null, colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(alice, { username: "Alice", displayName: null, colour: "blue" }, IP)).toEqual({
       ok: true,
     });
     expect((await memberRow(alice.id))?.display_name).toBeNull();
-    expect(await auth.saveProfileNames(bob, { username: "Ace", displayName: null, colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(bob, { username: "Ace", displayName: null, colour: "blue" }, IP)).toEqual({
       ok: true,
     });
   });
@@ -220,13 +228,13 @@ describe("saveProfileNames", () => {
     const { auth, members } = await setup("Alice", "Bob");
     const [alice, bob] = members;
 
-    expect(await auth.saveProfileNames(alice, { username: "Alicia", displayName: null, colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(alice, { username: "Alicia", displayName: null, colour: "blue" }, IP)).toEqual({
       ok: true,
     });
 
     expect(await auth.logIn("alicia", PASSWORD, IP)).not.toBeNull();
     expect(await auth.logIn("alice", PASSWORD, IP)).toBeNull();
-    expect(await auth.saveProfileNames(bob, { username: "Bob", displayName: "Alice", colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(bob, { username: "Bob", displayName: "Alice", colour: "blue" }, IP)).toEqual({
       ok: true,
     });
   });
@@ -234,7 +242,7 @@ describe("saveProfileNames", () => {
   it("allows a case-only username change", async () => {
     const { auth, members } = await setup("alice");
 
-    expect(await auth.saveProfileNames(members[0], { username: "ALICE", displayName: null, colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(members[0], { username: "ALICE", displayName: null, colour: "blue" }, IP)).toEqual({
       ok: true,
     });
     expect(await memberRow(members[0].id)).toMatchObject({ username: "ALICE", username_lower: "alice" });
@@ -243,7 +251,7 @@ describe("saveProfileNames", () => {
   it("refuses a new username equal to the password as typed", async () => {
     const { auth, members } = await setup("Alice");
 
-    expect(await auth.saveProfileNames(members[0], { username: PASSWORD, displayName: null, colour: "blue" })).toEqual({
+    expect(await auth.saveProfileNames(members[0], { username: PASSWORD, displayName: null, colour: "blue" }, IP)).toEqual({
       ok: false,
       errors: { username: "Choose a username that is not your password." },
     });
@@ -254,11 +262,60 @@ describe("saveProfileNames", () => {
     const { auth, members } = await setup("Alice");
     const deriveBits = vi.spyOn(crypto.subtle, "deriveBits");
 
-    await auth.saveProfileNames(members[0], { username: "Alice", displayName: "Ace", colour: "pink" });
+    await auth.saveProfileNames(members[0], { username: "Alice", displayName: "Ace", colour: "pink" }, IP);
     expect(deriveBits).toHaveBeenCalledTimes(0);
 
-    await auth.saveProfileNames(members[0], { username: "Alicia", displayName: "Ace", colour: "pink" });
+    await auth.saveProfileNames(members[0], { username: "Alicia", displayName: "Ace", colour: "pink" }, IP);
     expect(deriveBits).toHaveBeenCalledTimes(1);
+  });
+
+  it("refuses a username change past the IP limit with no PBKDF2 run and no write", async () => {
+    const { app, auth, members } = await setup("Alice");
+    const limits = createLoginLimits({ db: env.DB, clock: app.clock });
+    for (let i = 0; i < IP_FAILURE_LIMIT; i++) await limits.recordIpFailure(IP);
+    const deriveBits = vi.spyOn(crypto.subtle, "deriveBits");
+
+    expect(await auth.saveProfileNames(members[0], { username: "Alicia", displayName: null, colour: "blue" }, IP)).toEqual({
+      ok: false,
+      errors: { username: "Too many tries. Try again later." },
+    });
+    expect(deriveBits).toHaveBeenCalledTimes(0);
+    expect((await memberRow(members[0].id))?.username).toBe("Alice");
+    expect(await nameKeys()).toEqual([["alice", members[0].id]]);
+
+    // A save that keeps the username is never refused by the limits.
+    expect(await auth.saveProfileNames(members[0], { username: "Alice", displayName: "Ace", colour: "pink" }, IP)).toEqual({
+      ok: true,
+    });
+  });
+
+  it("counts each username-changing save as one IP failure and other saves as none", async () => {
+    const { auth, members } = await setup("Alice");
+
+    await auth.saveProfileNames(members[0], { username: "Alice", displayName: "Ace", colour: "pink" }, IP);
+    expect(await ipFailures()).toBe(0);
+
+    await auth.saveProfileNames(members[0], { username: "Alicia", displayName: "Ace", colour: "pink" }, IP);
+    expect(await ipFailures()).toBe(1);
+
+    await auth.saveProfileNames(members[0], { username: PASSWORD, displayName: "Ace", colour: "pink" }, IP);
+    expect(await ipFailures()).toBe(2);
+  });
+
+  it("shares the IP budget between renames, logins and password changes", async () => {
+    const { auth, members } = await setup("Alice");
+    const token = (await auth.logIn("Alice", PASSWORD, "198.51.100.1")) ?? "";
+    for (let i = 0; i < IP_FAILURE_LIMIT; i++) {
+      await auth.saveProfileNames(members[0], { username: `Alice${i}`, displayName: null, colour: "blue" }, IP);
+    }
+    const current = `Alice${IP_FAILURE_LIMIT - 1}`;
+
+    expect(await auth.logIn(current, PASSWORD, IP)).toBeNull();
+    expect(await auth.changePassword(members[0], token, PASSWORD, "a brand new passphrase", IP)).toEqual({
+      ok: false,
+      reason: "limited",
+    });
+    expect(await auth.logIn(current, PASSWORD, "198.51.100.1")).not.toBeNull();
   });
 
   it("lets only one of two racing saves take the same name", async () => {
@@ -266,8 +323,8 @@ describe("saveProfileNames", () => {
     const [alice, bob] = members;
 
     const results = await Promise.all([
-      auth.saveProfileNames(alice, { username: "Alice", displayName: "Ace", colour: "blue" }),
-      auth.saveProfileNames(bob, { username: "Bob", displayName: "ace", colour: "blue" }),
+      auth.saveProfileNames(alice, { username: "Alice", displayName: "Ace", colour: "blue" }, IP),
+      auth.saveProfileNames(bob, { username: "Bob", displayName: "ace", colour: "blue" }, IP),
     ]);
 
     expect(results.filter((result) => result.ok)).toHaveLength(1);

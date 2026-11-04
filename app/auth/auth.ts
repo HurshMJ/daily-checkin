@@ -293,9 +293,22 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
      * When the username changes, the new username as typed is hashed once
      * with the Member's stored salt and refused if it is their password. A
      * case variant of the password is not caught (one PBKDF2 run only).
+     * Because a refusal reveals the password, the check sits inside the login
+     * limits: it is refused with no PBKDF2 run when `admit` refuses, and
+     * every check, match or not, records an IP failure, so renames share the
+     * IP budget with logins. No username failure is recorded, since each
+     * accepted rename changes the username key. A save that keeps the
+     * username runs no check and is never limited.
      */
-    async saveProfileNames(member: CurrentMember, form: ProfileNamesForm): Promise<SaveProfileNamesResult> {
+    async saveProfileNames(
+      member: CurrentMember,
+      form: ProfileNamesForm,
+      ip: string,
+    ): Promise<SaveProfileNamesResult> {
       if (form.username !== member.username) {
+        if (!(await limits.admit(usernameKey(member.username), ip))) {
+          return { ok: false, errors: { username: "Too many tries. Try again later." } };
+        }
         const row = await db
           .prepare("SELECT password_hash, password_salt, password_iterations FROM members WHERE id = ?1")
           .bind(member.id)
@@ -307,6 +320,7 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
             salt: row.password_salt,
             iterations: row.password_iterations,
           }));
+        await limits.recordIpFailure(ip);
         if (isPassword) return { ok: false, errors: { username: USERNAME_IS_PASSWORD_MESSAGE } };
       }
 
