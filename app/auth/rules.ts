@@ -93,6 +93,9 @@ export function shownName(member: MemberNames): string {
   return member.displayName ?? member.username;
 }
 
+/** The message for a username another Member holds as a username or Display Name. */
+export const USERNAME_TAKEN_MESSAGE = "That username is taken.";
+
 /** The message for a username equal to the Member's own password. */
 export const USERNAME_IS_PASSWORD_MESSAGE = "Choose a username that is not your password.";
 

@@ -20,6 +20,7 @@ import {
   type ProfileNamesErrors,
   type ProfileNamesForm,
   USERNAME_IS_PASSWORD_MESSAGE,
+  USERNAME_TAKEN_MESSAGE,
   usernameKey,
   usernameTooLong,
 } from "./rules";
@@ -338,7 +339,7 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
           !results.some((row) => row.name_key === usernameKeyValue);
         return {
           ok: false,
-          errors: displayNameClashed ? { displayName: "That name is taken." } : { username: "That username is taken." },
+          errors: displayNameClashed ? { displayName: "That name is taken." } : { username: USERNAME_TAKEN_MESSAGE },
         };
       }
       return { ok: true };

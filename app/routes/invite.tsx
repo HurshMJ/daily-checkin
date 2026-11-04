@@ -11,7 +11,7 @@ import {
   sessionCookie,
   setCookies,
 } from "~/auth/request";
-import { type NewLoginErrors, normaliseUsername, validateNewLogin } from "~/auth/rules";
+import { type NewLoginErrors, normaliseUsername, USERNAME_TAKEN_MESSAGE, validateNewLogin } from "~/auth/rules";
 import { LoginFields, NewLoginFields } from "~/components/login-fields";
 import { Notice } from "~/components/notice";
 import { OfflineBar } from "~/components/offline-bar";
@@ -96,7 +96,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     const created = await auth.createLoginFromInvite(token, checked.value);
     if (!created.ok) {
       if (created.reason === "link-unusable") return unusable();
-      const errors = { username: "That username is taken." };
+      const errors = { username: USERNAME_TAKEN_MESSAGE };
       return data<ActionResult>({ unusable: false, mode: "create", errors, ...echo }, { status: 400 });
     }
     return redirect("/", { headers: setCookies(sessionCookie(created.sessionToken), usedUp()) });

@@ -1,7 +1,7 @@
 import { data, Form, redirect } from "react-router";
 
 import { authFor, clearedCookie, readCookie, SETUP_COOKIE, sessionCookie, setCookies } from "~/auth/request";
-import { type NewLoginErrors, normaliseUsername, validateNewLogin } from "~/auth/rules";
+import { type NewLoginErrors, normaliseUsername, USERNAME_TAKEN_MESSAGE, validateNewLogin } from "~/auth/rules";
 import { NewLoginFields } from "~/components/login-fields";
 import { Notice } from "~/components/notice";
 import { OfflineBar } from "~/components/offline-bar";
@@ -54,7 +54,7 @@ export async function action({ request, context }: Route.ActionArgs) {
   const result = await auth.createLoginFromSetupLink(token, checked.value);
   if (!result.ok) {
     const usable = result.reason !== "link-unusable";
-    const errors = usable ? { username: "That username is taken." } : {};
+    const errors = usable ? { username: USERNAME_TAKEN_MESSAGE } : {};
     return data<ActionResult>({ usable, errors, ...echo }, { status: usable ? 400 : 404 });
   }
   return redirect("/", { headers: setCookies(sessionCookie(result.sessionToken), clearedCookie(SETUP_COOKIE)) });
