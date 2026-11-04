@@ -45,6 +45,30 @@ export function recordingPushSender(
   };
 }
 
+/** Encodes bytes as unpadded base64url, the way the Push API serialises keys. */
+export function base64Url(bytes: Uint8Array): string {
+  return btoa(String.fromCharCode(...bytes)).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+/** A push endpoint on an allowed push service host, unique per name. */
+export function pushEndpoint(name: string): string {
+  return `https://fcm.googleapis.com/fcm/send/${name}`;
+}
+
+/**
+ * The form fields a browser posts to /push/subscription for an endpoint: keys
+ * of the right length (65-byte p256dh, 16-byte auth). The recording push
+ * sender never encrypts, so their values do not matter.
+ */
+export function subscriptionFields(endpoint: string): Record<string, string> {
+  return {
+    intent: "save",
+    endpoint,
+    p256dh: base64Url(new Uint8Array(65).fill(4)),
+    auth: base64Url(new Uint8Array(16).fill(7)),
+  };
+}
+
 /** The origin test requests are addressed to. */
 export const APP_ORIGIN = "https://daily-checkin.test";
 
@@ -117,6 +141,11 @@ export function startApp(
       },
       post: (path: string, form: Record<string, string>, options?: DeviceRequestOptions) =>
         send(path, "POST", form, options),
+      /** Turns push on for this device and its session, as the profile's button does. */
+      async subscribe(endpoint: string) {
+        const response = await send("/push/subscription", "POST", subscriptionFields(endpoint));
+        if (response.status !== 204) throw new Error(`subscribe failed with ${response.status}`);
+      },
     };
   }
 

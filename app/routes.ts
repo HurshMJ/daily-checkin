@@ -9,6 +9,7 @@ export default [
   route("logout", "routes/logout.ts"),
   route("logout-everywhere", "routes/logout-everywhere.ts"),
   route("profile", "routes/profile.tsx"),
+  route("push/subscription", "routes/push.subscription.ts"),
   route("groups/new", "routes/groups.new.tsx"),
   route("groups/:groupId", "routes/groups.$groupId.tsx"),
   route("groups/:groupId/history", "routes/groups.$groupId.history.tsx"),
