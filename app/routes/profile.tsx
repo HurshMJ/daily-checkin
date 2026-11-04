@@ -46,7 +46,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     notifications: {
       publicKey: app.env.VAPID_PUBLIC_KEY,
       onHere: pushOnHere,
-      prefs: { said_yes: prefs.said_yes, game_on: prefs.game_on, game_off: prefs.game_off },
+      prefs,
     },
   };
 }
