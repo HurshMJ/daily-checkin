@@ -79,7 +79,7 @@ function YesCounts({ counts }: { counts: YesCount[] }) {
         {counts.map((count) => (
           <li key={count.memberId} className="yes-count">
             <AvatarDot colour={count.colour} />
-            <span className="yes-count-name">{count.username}</span>
+            <span className="yes-count-name">{count.shownName}</span>
             <span className="yes-count-number">
               {count.nights === 0 ? (
                 "No nights yet"

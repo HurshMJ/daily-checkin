@@ -1,5 +1,6 @@
 import type { AvatarColour } from "~/auth/palette";
-import { type BoardRow, sortRows } from "~/checkins";
+import { type MemberNames, shownName } from "~/auth/rules";
+import { type BoardRow, compareShownNames, sortRows } from "~/checkins";
 import { addNights, gameNightOf, nightEnd } from "~/game-night";
 import type { Clock } from "~/services";
 
@@ -51,6 +52,8 @@ export interface PastNightSummary {
 /** One current Member's line in the Yes-count table. */
 export interface YesCount {
   memberId: number;
+  /** The Member's Shown name: their Display Name if set, else their username. */
+  shownName: string;
   username: string;
   colour: AvatarColour;
   /** Yes answers over the nights counted. */
@@ -104,7 +107,7 @@ export function pastCountLine(night: Pick<PastNightSummary, "yes" | "threshold" 
 
 /**
  * The Yes-count table's order: by share of Yes, then by Yes count, then by
- * username ignoring case. Members with no nights yet come last.
+ * Shown name ignoring case. Members with no nights yet come last.
  */
 export function sortYesCounts(counts: readonly YesCount[]): YesCount[] {
   return [...counts].sort(
@@ -113,8 +116,7 @@ export function sortYesCounts(counts: readonly YesCount[]): YesCount[] {
       // Compare a.yes / a.nights with b.yes / b.nights without dividing.
       b.yes * a.nights - a.yes * b.nights ||
       b.yes - a.yes ||
-      a.username.toLowerCase().localeCompare(b.username.toLowerCase()) ||
-      a.username.localeCompare(b.username),
+      compareShownNames(a.shownName, b.shownName),
   );
 }
 
@@ -137,9 +139,8 @@ interface NightRow {
   answered: number;
 }
 
-interface PastRowRecord {
+interface PastRowRecord extends MemberNames {
   id: number;
-  username: string;
   colour: AvatarColour;
   availability: BoardRow["availability"];
   note: string | null;
@@ -244,7 +245,7 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
             `WITH recent AS (
                SELECT id FROM history_nights WHERE group_id = ?2 ORDER BY game_night DESC LIMIT ${YES_COUNT_NIGHTS}
              )
-             SELECT p.id, p.username, p.colour,
+             SELECT p.id, p.username, p.display_name AS displayName, p.colour,
                COUNT(r.night_id) AS nights,
                COUNT(CASE WHEN r.availability = 'yes' THEN 1 END) AS yes
              FROM memberships mine
@@ -274,8 +275,15 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
       return {
         groupName: name,
         yesCounts: sortYesCounts(
-          (counts.results as { id: number; username: string; colour: AvatarColour; nights: number; yes: number }[]).map(
-            (row) => ({ memberId: row.id, username: row.username, colour: row.colour, yes: row.yes, nights: row.nights }),
+          (counts.results as unknown as (MemberNames & { id: number; colour: AvatarColour; nights: number; yes: number })[]).map(
+            (row) => ({
+              memberId: row.id,
+              shownName: shownName(row),
+              username: row.username,
+              colour: row.colour,
+              yes: row.yes,
+              nights: row.nights,
+            }),
           ),
         ),
         nights: page.slice(0, NIGHTS_PER_PAGE),
@@ -302,7 +310,8 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
           .bind(memberId, groupId, night),
         db
           .prepare(
-            `SELECT p.id, p.username, p.colour, r.availability, r.note, cur.member_id IS NULL AS has_left
+            `SELECT p.id, p.username, p.display_name AS displayName, p.colour, r.availability, r.note,
+               cur.member_id IS NULL AS has_left
              FROM memberships mine
              JOIN history_nights h ON h.group_id = mine.group_id AND h.game_night = ?3
              JOIN history_rows r ON r.night_id = h.id
@@ -322,6 +331,7 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
           (rows.results as unknown as PastRowRecord[]).map(
             (row): PastRow => ({
               memberId: row.id,
+              shownName: shownName(row),
               username: row.username,
               colour: row.colour,
               availability: row.availability,

@@ -3,8 +3,10 @@ import { data, Form, redirect, useNavigation } from "react-router";
 import { hashToken } from "~/auth/crypto";
 import { clientIp } from "~/auth/login-limits";
 import { authFor, currentSession, requireMember } from "~/auth/request";
+import { type ProfileNamesErrors, shownName, validateProfileNames } from "~/auth/rules";
 import { AvatarDot } from "~/components/avatar-dot";
 import { FieldError } from "~/components/field-error";
+import { ColourPicker } from "~/components/login-fields";
 import { NotificationsCard, NOTIFICATIONS_INTENT, togglesFrom } from "~/components/notification-settings";
 import { Notice } from "~/components/notice";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
@@ -18,13 +20,14 @@ import type { Route } from "./+types/profile";
 
 const LOGOUT = "/logout";
 const LOGOUT_EVERYWHERE = "/logout-everywhere";
+const NAMES_INTENT = "names";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Profile · Daily Check-in" }];
 }
 
 export async function loader({ request, context }: Route.LoaderArgs) {
-  const { id, username, colour } = requireMember(context);
+  const { id, username, displayName, colour } = requireMember(context);
   const app = context.get(appContext);
   const search = new URL(request.url).searchParams;
   // Log out everywhere sends a first tap made without JavaScript back here, armed.
@@ -39,7 +42,11 @@ export async function loader({ request, context }: Route.LoaderArgs) {
   const left = search.get("left");
   return {
     username,
+    displayName,
     colour,
+    // Saving the name and colour card lands back here, so the header and the
+    // top bar read the saved names from a fresh session.
+    namesSaved: search.has("saved"),
     armLogoutEverywhere,
     groups,
     left: left ? { name: left, deleted: search.has("deleted") } : null,
@@ -53,27 +60,54 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 type PasswordErrors = Partial<Record<"currentPassword" | "newPassword", string>>;
 
+/** A refused name and colour save: the field errors and the values as typed, to fill the form again. */
+interface NamesRefused {
+  errors: ProfileNamesErrors;
+  values: { username: string; displayName: string; colour: string };
+}
+
+/** What every action result holds when the post did not touch that card. */
+const UNCHANGED = {
+  errors: {} as PasswordErrors,
+  changedAt: null as string | null,
+  armedLeave: null as number | null,
+  notificationsSaved: false,
+  names: null as NamesRefused | null,
+};
+
 /**
- * Change password, leave a Group when the intent field is "leave", or save
- * the notification toggles when it is "notifications". Typed passwords are
- * never sent back to the page. Leaving acts only when the tap-again button
- * confirmed it; an unconfirmed post returns the page with that Group's Leave
- * button armed.
+ * Change password, save the name and colour card when the intent field is
+ * "names", leave a Group when it is "leave", or save the notification toggles
+ * when it is "notifications". Typed passwords are never sent back to the
+ * page. Leaving acts only when the tap-again button confirmed it; an
+ * unconfirmed post returns the page with that Group's Leave button armed.
  */
 export async function action({ request, context }: Route.ActionArgs) {
   const member = requireMember(context);
   const token = currentSession(context)?.token ?? "";
   const form = await request.formData();
 
+  if (form.get("intent") === NAMES_INTENT) {
+    const valid = validateProfileNames(form);
+    const result = valid.ok ? await authFor(context).saveProfileNames(member, valid.value, clientIp(request)) : valid;
+    if (result.ok) return redirect("/profile?saved=1", 303);
+    const values = {
+      username: String(form.get("username") ?? ""),
+      displayName: String(form.get("displayName") ?? ""),
+      colour: String(form.get("colour") ?? ""),
+    };
+    return data({ ...UNCHANGED, names: { errors: result.errors, values } }, { status: 400 });
+  }
+
   if (form.get("intent") === NOTIFICATIONS_INTENT) {
     await createPush(context.get(appContext)).setPrefs(member.id, togglesFrom(form));
-    return { errors: {} as PasswordErrors, changedAt: null, armedLeave: null, notificationsSaved: true };
+    return { ...UNCHANGED, notificationsSaved: true };
   }
 
   if (form.get("intent") === "leave") {
     const groupId = Number(form.get("groupId"));
     if (!Number.isSafeInteger(groupId)) return refused({}, 400);
-    if (!isConfirmed(form)) return { errors: {} as PasswordErrors, changedAt: null, armedLeave: groupId, notificationsSaved: false };
+    if (!isConfirmed(form)) return { ...UNCHANGED, armedLeave: groupId };
     const groups = createGroups(context.get(appContext));
     const name = (await groups.membershipsFor(member.id)).find((group) => group.groupId === groupId)?.name;
     const left = await groups.leave(member.id, groupId);
@@ -91,14 +125,7 @@ export async function action({ request, context }: Route.ActionArgs) {
     String(form.get("newPassword") ?? ""),
     clientIp(request),
   );
-  if (result.ok) {
-    return {
-      errors: {} as PasswordErrors,
-      changedAt: context.get(appContext).clock.now().toISOString(),
-      armedLeave: null,
-      notificationsSaved: false,
-    };
-  }
+  if (result.ok) return { ...UNCHANGED, changedAt: context.get(appContext).clock.now().toISOString() };
   if (result.reason === "new-password") return refused({ newPassword: result.message }, 400);
   if (result.reason === "wrong-current") {
     return refused({ currentPassword: "That is not your current password." }, 400);
@@ -108,7 +135,7 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 /** A refused post: the password errors, if any, with nothing changed. */
 function refused(errors: PasswordErrors, status: number) {
-  return data({ errors, changedAt: null, armedLeave: null, notificationsSaved: false }, { status });
+  return data({ ...UNCHANGED, errors }, { status });
 }
 
 export default function Profile({ loaderData, actionData }: Route.ComponentProps) {
@@ -117,13 +144,14 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
   // each button pends only for its own form's post.
   const submitting = useSubmitting();
   const intent = navigation.formData?.get("intent");
-  const changingPassword = submitting && intent !== "leave" && intent !== NOTIFICATIONS_INTENT;
+  const changingPassword =
+    submitting && intent !== "leave" && intent !== NOTIFICATIONS_INTENT && intent !== NAMES_INTENT;
   const savingNotifications = submitting && intent === NOTIFICATIONS_INTENT;
+  const savingNames = submitting && intent === NAMES_INTENT;
   const errors: PasswordErrors = actionData?.errors ?? {};
   const loggingOut = useSubmitting(LOGOUT);
   const loggingOutEverywhere = useSubmitting(LOGOUT_EVERYWHERE);
-  // Ticket 24 adds Display Name; until then the name is the username.
-  const name = loaderData.username;
+  const name = shownName(loaderData);
   return (
     <>
       <TopBar back />
@@ -136,8 +164,16 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
           </div>
         </header>
         {/* One card per settings topic, in spec order: name and colour,
-            notifications, password, Groups, sessions, delete login. Name and
-            colour and delete login come in later tickets. */}
+            notifications, password, Groups, sessions, delete login. Delete
+            login comes in a later ticket. */}
+        <NamesCard
+          username={loaderData.username}
+          displayName={loaderData.displayName}
+          colour={loaderData.colour}
+          saved={loaderData.namesSaved && !actionData}
+          refused={actionData?.names ?? null}
+          saving={savingNames}
+        />
         <NotificationsCard
           {...loaderData.notifications}
           saved={actionData?.notificationsSaved ?? false}
@@ -225,6 +261,85 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
         </section>
       </main>
     </>
+  );
+}
+
+/**
+ * The name and colour card: username, the optional Display Name and the
+ * avatar colour, saved together. A refused save fills the fields again with
+ * what was typed and puts each error next to its field.
+ */
+function NamesCard({
+  username,
+  displayName,
+  colour,
+  saved,
+  refused,
+  saving,
+}: {
+  username: string;
+  displayName: string | null;
+  colour: string;
+  saved: boolean;
+  refused: NamesRefused | null;
+  saving: boolean;
+}) {
+  const errors = refused?.errors ?? {};
+  const values = refused?.values ?? { username, displayName: displayName ?? "", colour };
+  return (
+    <section className="card" aria-labelledby="names-heading">
+      <h2 id="names-heading">Name and colour</h2>
+      <div role="status">
+        {saved ? (
+          <Notice tone="info" title="Profile saved">
+            Your Groups see your new name and colour.
+          </Notice>
+        ) : null}
+      </div>
+      {/* A new key after each refused save fills the fields with what was typed. */}
+      <Form method="post" className="page-form" noValidate key={refused ? JSON.stringify(refused) : "names"}>
+        <input type="hidden" name="intent" value={NAMES_INTENT} />
+        <div className="field">
+          <label className="field-label" htmlFor="profile-username">Username</label>
+          <input
+            className="field-input"
+            id="profile-username"
+            name="username"
+            autoComplete="username"
+            required
+            defaultValue={values.username}
+            aria-invalid={errors.username ? true : undefined}
+            aria-describedby="profile-username-help"
+          />
+          {errors.username ? (
+            <FieldError id="profile-username-help">{errors.username}</FieldError>
+          ) : (
+            <p id="profile-username-help" className="field-hint">
+              You log in with this. 3 to 32 characters.
+            </p>
+          )}
+        </div>
+        <div className="field">
+          <label className="field-label" htmlFor="display-name">Display Name</label>
+          <input
+            className="field-input"
+            id="display-name"
+            name="displayName"
+            autoComplete="nickname"
+            defaultValue={values.displayName}
+            aria-invalid={errors.displayName ? true : undefined}
+            aria-describedby="display-name-help"
+          />
+          {errors.displayName ? (
+            <FieldError id="display-name-help">{errors.displayName}</FieldError>
+          ) : (
+            <p id="display-name-help" className="field-hint">Leave empty to show your username.</p>
+          )}
+        </div>
+        <ColourPicker error={errors.colour} colour={values.colour} />
+        <SubmitButton pending={saving} label="Save" pendingLabel="Saving…" className="btn-primary" />
+      </Form>
+    </section>
   );
 }
 

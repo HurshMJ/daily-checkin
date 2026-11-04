@@ -1,4 +1,10 @@
-import { codePoints, hasInvisible, INVISIBLE_MESSAGE, normaliseText } from "~/text-rules";
+import {
+  codePoints,
+  hasInvisible,
+  hasInvisibleOutsideEmoji,
+  INVISIBLE_MESSAGE,
+  normaliseText,
+} from "~/text-rules";
 
 import { type AvatarColour, isAvatarColour } from "./palette";
 
@@ -10,9 +16,18 @@ export function normaliseUsername(raw: string): string {
   return normaliseText(raw);
 }
 
+/**
+ * The key of a name in the one namespace usernames and Display Names share
+ * (the name_keys table): trimmed, NFC-normalised and lower-cased, so names
+ * that differ only in case are one name.
+ */
+export function nameKey(raw: string): string {
+  return normaliseText(raw).toLowerCase();
+}
+
 /** The key usernames are unique on and looked up by at login. */
 export function usernameKey(raw: string): string {
-  return normaliseUsername(raw).toLowerCase();
+  return nameKey(raw);
 }
 
 /**
@@ -46,6 +61,43 @@ export function usernameError(username: string): string | null {
   if (hasInvisible(username)) return INVISIBLE_MESSAGE;
   return null;
 }
+
+/** The longest Display Name accepted, in code points of the normalised form. */
+export const MAX_DISPLAY_NAME_LENGTH = 32;
+
+/**
+ * Returns an error message for a normalised, non-empty Display Name, or null
+ * when it is fine. Unlike a username it may be a single character, and a
+ * joined emoji such as 👨‍👩‍👧 keeps the joiners inside it.
+ */
+export function displayNameError(displayName: string): string | null {
+  const length = codePoints(displayName);
+  if (length < 1 || length > MAX_DISPLAY_NAME_LENGTH) return `Use 1 to ${MAX_DISPLAY_NAME_LENGTH} characters.`;
+  if (hasInvisibleOutsideEmoji(displayName)) return INVISIBLE_MESSAGE;
+  return null;
+}
+
+/** The two names a Member has, as stored. */
+export interface MemberNames {
+  username: string;
+  displayName: string | null;
+}
+
+/**
+ * The Shown name: the name the app shows for a Member on Boards, in History,
+ * on the Group page and in notifications. It is the Display Name when set,
+ * otherwise the username, and is worked out when read, so a rename also
+ * changes past nights.
+ */
+export function shownName(member: MemberNames): string {
+  return member.displayName ?? member.username;
+}
+
+/** The message for a username another Member holds as a username or Display Name. */
+export const USERNAME_TAKEN_MESSAGE = "That username is taken.";
+
+/** The message for a username equal to the Member's own password. */
+export const USERNAME_IS_PASSWORD_MESSAGE = "Choose a username that is not your password.";
 
 /**
  * Returns an error message for the normalised password field, or null when it
@@ -88,4 +140,35 @@ export function validateNewLogin(
 
   if (Object.keys(errors).length > 0 || !isAvatarColour(colour)) return { ok: false, errors };
   return { ok: true, value: { username, password, colour } };
+}
+
+export interface ProfileNamesForm {
+  username: string;
+  /** Null when the field is left empty: the Member shows their username. */
+  displayName: string | null;
+  colour: AvatarColour;
+}
+
+export type ProfileNamesErrors = Partial<Record<"username" | "displayName" | "colour", string>>;
+
+/**
+ * Validates the profile's name and colour form. Returns the cleaned values,
+ * or the field-level messages to show next to each field.
+ */
+export function validateProfileNames(
+  form: FormData,
+): { ok: true; value: ProfileNamesForm } | { ok: false; errors: ProfileNamesErrors } {
+  const username = normaliseUsername(String(form.get("username") ?? ""));
+  const displayName = normaliseText(String(form.get("displayName") ?? "")) || null;
+  const colour = form.get("colour");
+
+  const errors: ProfileNamesErrors = {};
+  const usernameProblem = usernameError(username);
+  if (usernameProblem) errors.username = usernameProblem;
+  const displayNameProblem = displayName === null ? null : displayNameError(displayName);
+  if (displayNameProblem) errors.displayName = displayNameProblem;
+  if (!isAvatarColour(colour)) errors.colour = "Choose a colour.";
+
+  if (Object.keys(errors).length > 0 || !isAvatarColour(colour)) return { ok: false, errors };
+  return { ok: true, value: { username, displayName, colour } };
 }

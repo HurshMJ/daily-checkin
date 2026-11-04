@@ -58,7 +58,7 @@ describe("the Groups card on the profile", () => {
     const { bob } = await setUp();
     const main = mainOf(await (await bob.get("/profile")).text());
     const headings = [...main.matchAll(/<h2 id="[^"]*">([^<]*)<\/h2>/g)].map(([, text]) => text);
-    expect(headings).toEqual(["Notifications", "Password", "Groups", "Sessions"]);
+    expect(headings).toEqual(["Name and colour", "Notifications", "Password", "Groups", "Sessions"]);
   });
 
   it("gives a Member a Leave button described by the Group's name", async () => {
@@ -377,5 +377,94 @@ describe("the service worker in public/sw.js", () => {
     await sw.click("/groups/1");
     expect(open.focused).toBe(1);
     expect(sw.opened).toEqual([]);
+  });
+});
+
+/** The name and colour card's inner HTML. */
+function namesCard(main: string): string {
+  const card = main.match(/<section class="card" aria-labelledby="names-heading">([\s\S]*?)<\/section>/);
+  expect(card, "Name and colour card").not.toBeNull();
+  return card![1];
+}
+
+/** The profile header's inner HTML. */
+function profileHeader(main: string): string {
+  return main.match(/<header class="profile-header">([\s\S]*?)<\/header>/)![1];
+}
+
+describe("the name and colour card", () => {
+  it("is the first card and holds username, Display Name, the picker and Save", async () => {
+    const { bob } = await setUp();
+    const main = mainOf(await (await bob.get("/profile")).text());
+    const card = namesCard(main);
+
+    expect(main.indexOf('aria-labelledby="names-heading"')).toBeLessThan(main.indexOf('aria-labelledby="notifications-heading"'));
+    expect(card).toMatch(/<input[^>]*id="profile-username"[^>]*value="Bob"/);
+    expect(card).toMatch(/<input[^>]*id="display-name"[^>]*value=""/);
+    expect(card).toContain("Leave empty to show your username.");
+    expect(card).toMatch(/<input[^>]*checked=""[^>]*value="blue"/);
+    expect(card).toMatch(/<button[^>]*>Save<\/button>/);
+  });
+
+  it("saves without JavaScript and the header shows the Shown name and @username", async () => {
+    const { bob } = await setUp();
+
+    const saved = await bob.post("/profile", { intent: "names", username: "Bobby", displayName: " Bob 🎲 ", colour: "pink" });
+    expect(saved.status).toBe(303);
+    expect(saved.headers.get("Location")).toBe("/profile?saved=1");
+
+    const main = mainOf(await (await bob.get("/profile?saved=1")).text());
+    const header = profileHeader(main);
+    expect(header).toContain('data-colour="pink"');
+    expect(header).toContain('<h1 class="profile-name">Bob 🎲</h1>');
+    expect(header).toContain('<p class="profile-username">@Bobby</p>');
+    expect(namesCard(main)).toContain("Profile saved");
+    expect(namesCard(main)).toMatch(/<input[^>]*id="display-name"[^>]*value="Bob 🎲"/);
+  });
+
+  it("shows the username in the header when the Display Name is cleared", async () => {
+    const { bob } = await setUp();
+    await bob.post("/profile", { intent: "names", username: "Bob", displayName: "Bobby", colour: "blue" });
+    await bob.post("/profile", { intent: "names", username: "Bob", displayName: "  ", colour: "blue" });
+
+    const header = profileHeader(mainOf(await (await bob.get("/profile")).text()));
+    expect(header).toContain('<h1 class="profile-name">Bob</h1>');
+  });
+
+  it("shows the new colour in the top bar on the next page", async () => {
+    const { bob } = await setUp();
+    await bob.post("/profile", { intent: "names", username: "Bob", displayName: "", colour: "violet" });
+
+    const tonight = await (await bob.get("/")).text();
+    expect(tonight).toMatch(/<a[^>]*class="top-bar-you"[^>]*><span class="avatar-dot" data-colour="violet"/);
+  });
+
+  it("puts a taken Display Name's error next to that field and keeps what was typed", async () => {
+    const { bob } = await setUp();
+
+    const refused = await bob.post("/profile", { intent: "names", username: "Bobby", displayName: "alice", colour: "pink" });
+    expect(refused.status).toBe(400);
+    const card = namesCard(mainOf(await refused.text()));
+
+    expect(card).toMatch(/<input[^>]*id="display-name"[^>]*aria-invalid="true"[^>]*aria-describedby="display-name-help"[^>]*value="alice"/);
+    expect(card).toContain('<p id="display-name-help" class="field-error">Error: That name is taken.</p>');
+    expect(card).toMatch(/<input[^>]*id="profile-username"[^>]*value="Bobby"/);
+    expect(card).toMatch(/<input[^>]*checked=""[^>]*value="pink"/);
+    expect(await idOf("members", "username", "Bob")).toBeGreaterThan(0);
+  });
+
+  it("puts a username error next to the username field", async () => {
+    const { bob } = await setUp();
+
+    const asPassword = await bob.post("/profile", { intent: "names", username: PASSWORD, displayName: "", colour: "blue" });
+    const tooShort = await bob.post("/profile", { intent: "names", username: "Bo", displayName: "", colour: "blue" });
+
+    expect(asPassword.status).toBe(400);
+    expect(namesCard(mainOf(await asPassword.text()))).toContain(
+      '<p id="profile-username-help" class="field-error">Error: Choose a username that is not your password.</p>',
+    );
+    expect(namesCard(mainOf(await tooShort.text()))).toContain(
+      '<p id="profile-username-help" class="field-error">Error: Use 3 to 32 characters.</p>',
+    );
   });
 });

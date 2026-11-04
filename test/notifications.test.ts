@@ -109,6 +109,15 @@ describe("someone said Yes", () => {
     });
   });
 
+  it("names the Member by their Display Name when they have one", async () => {
+    const { app, Alice } = await setUp();
+    await Alice.post("/profile", { intent: "names", username: "Alice", displayName: "Ace 🎯", colour: "blue" });
+
+    await answer(Alice, "yes");
+
+    expect(take(app)).toEqual(["bob: Ace 🎯 said Yes", "carol: Ace 🎯 said Yes"]);
+  });
+
   it("is sent at most once per Member per Game Night, however the answer flips", async () => {
     const { app, Alice } = await setUp();
     await answer(Alice, "maybe");
@@ -652,6 +661,58 @@ describe("the Daily Summary", () => {
       "alice: Friday: 1 Yes, 2 no answer",
       "carol: Friday: 1 Yes, 2 no answer",
     ]);
+  });
+
+  it("names each Member by Shown name, in Board order by Shown name", async () => {
+    const { app, Alice, Bob, Carol } = await setUp();
+    await Bob.post("/profile", { intent: "names", username: "Bob", displayName: "Zed 🎲", colour: "blue" });
+    await answer(Alice, "maybe");
+    await answer(Bob, "maybe");
+    await answer(Carol, "maybe");
+    take(app);
+
+    await runAt(app, SUMMARY_3_NOV);
+
+    expect(takePayloads(app)[0].body).toBe("Maybe: Alice, Carol, Zed 🎲");
+  });
+
+  it("fits a Group of 99 Members with the longest emoji Display Names, ending with how many more there are", async () => {
+    const { app, Alice, friday } = await setUp();
+    const now = app.clock.now().toISOString();
+    // 96 more Members whose Display Names are 32 code points, 30 of them four-byte emoji, all Maybe.
+    const statements = [];
+    for (let i = 0; i < 96; i++) {
+      const username = `member ${String(i).padStart(2, "0")}`;
+      statements.push(
+        env.DB.prepare(
+          `INSERT INTO members (username, username_lower, display_name, colour, password_hash, password_salt, password_iterations, created_at)
+           VALUES (?1, lower(?1), ?2, 'blue', 'x', 'x', 1, ?3)`,
+        ).bind(username, `${"🎲".repeat(30)}${String(i).padStart(2, "0")}`, now),
+        env.DB.prepare(
+          "INSERT INTO memberships (group_id, member_id, joined_at) SELECT ?1, id, ?2 FROM members WHERE username = ?3",
+        ).bind(friday, now, username),
+        env.DB.prepare(
+          "INSERT INTO checkins (member_id, game_night, availability, updated_at) SELECT id, '2026-11-03', 'maybe', ?1 FROM members WHERE username = ?2",
+        ).bind(now, username),
+      );
+    }
+    await env.DB.batch(statements);
+    await answer(Alice, "yes");
+    take(app);
+
+    await runAt(app, SUMMARY_3_NOV);
+    const [first] = takePayloads(app);
+    const { to: _, ...payload } = first;
+    const bytes = new TextEncoder().encode(encodePayload(payload)).length;
+    expect(bytes).toBeLessThanOrEqual(MAX_PAYLOAD_BYTES);
+    // Close to the limit: no room was left for another 122-byte name.
+    expect(bytes).toBeGreaterThan(MAX_PAYLOAD_BYTES - 130);
+    const more = first.body.match(/ \+([0-9]+) more$/);
+    expect(more, first.body).not.toBeNull();
+    const shown = first.body.replace(/ \+[0-9]+ more$/, "").split("\n").flatMap((line) => line.replace(/^[^:]*: /, "").split(", "));
+    expect(shown[0]).toBe("Alice");
+    expect(shown[1]).toBe(`${"🎲".repeat(30)}00`);
+    expect(shown.length + Number(more![1])).toBe(99);
   });
 
   it("fits a Group of 99 Members with the longest names, ending with how many more there are", async () => {

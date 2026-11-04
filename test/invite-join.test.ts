@@ -48,6 +48,15 @@ const viewOf = (token: string) => createInvites({ env, clock: { now: () => new D
 const newLogin = { intent: "create", username: "Bob", password: PASSWORD, colour: "sky" };
 
 describe("the Invite page, logged out", () => {
+  it("names the inviter by their Display Name when they have one", async () => {
+    const { app, alice, token } = await setUp();
+    await alice.post("/profile", { intent: "names", username: "Alice", displayName: "Ace 🎯", colour: "blue" });
+
+    const body = bodyOf(await (await app.device().open(`/invite/${token}`)).text());
+
+    expect(body).toContain("Ace 🎯 invited you to</p><h1>Friday</h1>");
+  });
+
   it("names the inviter and the Group, offers both ways in, and has no top bar", async () => {
     const { app, token } = await setUp();
     const response = await app.device().open(`/invite/${token}`);

@@ -84,6 +84,16 @@ describe("the Group page", () => {
     expect(main).toContain("No pending Invites.");
   });
 
+  it("shows each Member's Shown name in bold with @username below", async () => {
+    const { alice, bob, page } = await setUp();
+    await bob.post("/profile", { intent: "names", username: "Bob", displayName: "Zed 🎲", colour: "sky" });
+
+    const main = mainOf(await (await alice.get(page)).text());
+    const tiles = [...main.matchAll(/<li class="list-tile">([\s\S]*?)<\/li>/g)].map(([, tile]) => tile);
+
+    expect(tiles[1]).toMatch(/<span class="list-tile-name" id="member-\d+-name">Zed 🎲<\/span><span class="list-tile-detail">@Bob<\/span>/);
+  });
+
   it("shows a non-Owner Member the name, threshold and Members only", async () => {
     const { bob, page } = await setUp();
     const response = await bob.get(page);

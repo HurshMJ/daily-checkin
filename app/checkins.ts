@@ -1,4 +1,5 @@
 import type { AvatarColour } from "~/auth/palette";
+import { shownName } from "~/auth/rules";
 import { gameNightOf } from "~/game-night";
 import { allClaims, batchWithClaims, type Claims, createNotifications, type Delivery, saidYesClaims } from "~/notifications";
 import type { Clock } from "~/services";
@@ -52,6 +53,8 @@ export function pillFor({ yes, threshold, wasOn }: { yes: number; threshold: num
 /** One Member's row on a Board. */
 export interface BoardRow {
   memberId: number;
+  /** The Member's Shown name: their Display Name if set, else their username. */
+  shownName: string;
   username: string;
   colour: AvatarColour;
   availability: Availability | null;
@@ -61,15 +64,22 @@ export interface BoardRow {
 const ROW_ORDER: Record<Availability | "none", number> = { yes: 0, maybe: 1, no: 2, none: 3 };
 
 /**
- * Board rows in order: Yes, Maybe, No, then no answer yet. Within each, by
- * username ignoring case, so the order is stable between visits.
+ * Orders two Shown names ignoring case, then as typed, so the order is stable
+ * between visits. Boards and History sort Members with it.
  */
-export function sortRows<Row extends Pick<BoardRow, "availability" | "username">>(rows: readonly Row[]): Row[] {
+export function compareShownNames(a: string, b: string): number {
+  return a.toLowerCase().localeCompare(b.toLowerCase()) || a.localeCompare(b);
+}
+
+/**
+ * Board rows in order: Yes, Maybe, No, then no answer yet. Within each, by
+ * Shown name ignoring case, so the order is stable between visits.
+ */
+export function sortRows<Row extends Pick<BoardRow, "availability" | "shownName">>(rows: readonly Row[]): Row[] {
   return [...rows].sort(
     (a, b) =>
       ROW_ORDER[a.availability ?? "none"] - ROW_ORDER[b.availability ?? "none"] ||
-      a.username.toLowerCase().localeCompare(b.username.toLowerCase()) ||
-      a.username.localeCompare(b.username),
+      compareShownNames(a.shownName, b.shownName),
   );
 }
 
@@ -261,7 +271,7 @@ export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: C
           .bind(memberId, night),
         db
           .prepare(
-            `SELECT m.group_id, p.id, p.username, p.colour, c.availability, c.note
+            `SELECT m.group_id, p.id, p.username, p.display_name AS displayName, p.colour, c.availability, c.note
              FROM memberships mine
              JOIN memberships m ON m.group_id = mine.group_id
              JOIN members p ON p.id = m.member_id
@@ -276,6 +286,7 @@ export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: C
         group_id: number;
         id: number;
         username: string;
+        displayName: string | null;
         colour: AvatarColour;
         availability: Availability | null;
         note: string | null;
@@ -287,6 +298,7 @@ export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: C
             .filter((row) => row.group_id === group.id)
             .map((row): BoardRow => ({
               memberId: row.id,
+              shownName: shownName(row),
               username: row.username,
               colour: row.colour,
               availability: row.availability,

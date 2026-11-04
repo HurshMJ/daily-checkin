@@ -18,6 +18,7 @@ describe("pillFor", () => {
 describe("sortRows", () => {
   const row = (username: string, availability: BoardRow["availability"]): BoardRow => ({
     memberId: 0,
+    shownName: username,
     username,
     colour: "blue",
     availability,

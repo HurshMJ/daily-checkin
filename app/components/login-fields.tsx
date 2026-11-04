@@ -60,30 +60,41 @@ export function NewLoginFields({
           </p>
         )}
       </div>
-      <fieldset
-        className="picker"
-        role="radiogroup"
-        aria-invalid={errors.colour ? true : undefined}
-        aria-describedby={errors.colour ? "colour-error" : undefined}
-      >
-        <legend className="picker-legend">Avatar colour</legend>
-        {AVATAR_COLOUR_NAMES.map((name) => (
-          <label key={name} className="picker-tile">
-            <input
-              className="picker-input"
-              type="radio"
-              name="colour"
-              value={name}
-              required
-              defaultChecked={colour === name}
-            />
-            <AvatarDot colour={name} />
-            {AVATAR_COLOURS[name].label}
-          </label>
-        ))}
-        {errors.colour ? <FieldError id="colour-error">{errors.colour}</FieldError> : null}
-      </fieldset>
+      <ColourPicker error={errors.colour} colour={colour} />
     </>
+  );
+}
+
+/**
+ * The avatar colour picker: a radio tile per palette colour, each with its
+ * dot and name, and the error below when there is one. Shared by new logins
+ * and the profile's name and colour card.
+ */
+export function ColourPicker({ error, colour }: { error?: string; colour?: string }) {
+  return (
+    <fieldset
+      className="picker"
+      role="radiogroup"
+      aria-invalid={error ? true : undefined}
+      aria-describedby={error ? "colour-error" : undefined}
+    >
+      <legend className="picker-legend">Avatar colour</legend>
+      {AVATAR_COLOUR_NAMES.map((name) => (
+        <label key={name} className="picker-tile">
+          <input
+            className="picker-input"
+            type="radio"
+            name="colour"
+            value={name}
+            required
+            defaultChecked={colour === name}
+          />
+          <AvatarDot colour={name} />
+          {AVATAR_COLOURS[name].label}
+        </label>
+      ))}
+      {error ? <FieldError id="colour-error">{error}</FieldError> : null}
+    </fieldset>
   );
 }
 

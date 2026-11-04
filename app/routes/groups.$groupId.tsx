@@ -197,9 +197,8 @@ export default function Group({ loaderData, actionData }: Route.ComponentProps) 
                 <li key={member.id} className="list-tile">
                   <AvatarDot colour={member.colour} />
                   <span className="list-tile-text">
-                    {/* Ticket 24 adds Display Name; until then the shown name is the username. */}
                     <span className="list-tile-name" id={nameId}>
-                      {member.username}
+                      {member.shownName}
                     </span>
                     <span className="list-tile-detail">@{member.username}</span>
                   </span>
@@ -346,7 +345,7 @@ function Manage({
   armed,
   pendingIntent,
 }: {
-  member: { id: number; username: string };
+  member: { id: number; shownName: string };
   nameId: string;
   armed: string | null;
   pendingIntent: FormDataEntryValue | null;
@@ -365,7 +364,7 @@ function Manage({
           <TapAgainButton
             pending={pendingIntent === "hand-over"}
             label="Make Owner"
-            confirmLabel={`Tap again to make ${member.username} Owner`}
+            confirmLabel={`Tap again to make ${member.shownName} Owner`}
             pendingLabel="Making Owner…"
             armed={armed === handOverKey}
             describedBy={nameId}
@@ -377,7 +376,7 @@ function Manage({
           <TapAgainButton
             pending={pendingIntent === "remove"}
             label="Remove"
-            confirmLabel={`Tap again to remove ${member.username}`}
+            confirmLabel={`Tap again to remove ${member.shownName}`}
             pendingLabel="Removing…"
             armed={armed === removeKey}
             describedBy={nameId}

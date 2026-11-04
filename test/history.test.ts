@@ -46,10 +46,11 @@ function tiles(main: string): string[][] {
 /** Each frozen Board row as "name|answer|note", in page order. */
 function boardRows(main: string): string[] {
   return [...main.matchAll(/<li class="board-row" data-availability="[^"]*">([\s\S]*?)<\/li>/g)].map(([, row]) => {
-    const name = row.match(/<span class="board-row-name">([\s\S]*?)<\/span><span class="board-row-answer">/)![1];
+    const who = row.match(/<div class="board-row-who">([\s\S]*?)<\/div><span class="board-row-answer">/)![1];
+    const name = who.match(/class="board-row-name">([^<]*)</)![1] + (who.match(/<span class="board-row-left">([^<]*)<\/span>/)?.[1] ?? "");
     const answer = row.match(/<span class="board-row-answer">([^<]*)<\/span>/)![1];
     const note = row.match(/<p class="board-row-note">([^<]*)<\/p>/)?.[1] ?? "";
-    return `${name.replace(/<[^>]+>/g, "")}|${answer}|${note}`;
+    return `${name}|${answer}|${note}`;
   });
 }
 
@@ -272,6 +273,36 @@ describe("a past night's page", () => {
     expect(main).toContain("Frozen as it stood at the Reset the next morning.");
   });
 
+  it("shows a Display Name set after the Reset on the past night and in the Yes counts", async () => {
+    const { app, alice, bob, ids, answer, history, friday } = await setUp();
+    await answer(ids.bob, "yes");
+    app.clock.set(RESET_4_NOV);
+    await app.runScheduled();
+    await bob.post("/profile", { intent: "names", username: "Bob", displayName: "Zed 🎲", colour: "sky" });
+
+    const night = mainOf(await (await alice.get(`/groups/${friday}/history/2026-11-03`)).text());
+    const page = mainOf(await (await alice.get(history)).text());
+
+    expect(boardRows(night)).toEqual(["Zed 🎲|Yes|", "You|No answer|"]);
+    expect(night).toContain(
+      '<details class="board-row-reveal"><summary class="board-row-name">Zed 🎲</summary><span class="board-row-username">@Bob</span></details>',
+    );
+    // Every past-night row starts with the Member's avatar dot.
+    expect(night.match(/<div class="board-row-who"><span class="avatar-dot" data-colour="[a-z]+"/g)).toHaveLength(2);
+    expect(yesCountLines(page)).toEqual(["Zed 🎲: Yes 1 of 1", "Alice: Yes 0 of 1"]);
+  });
+
+  it("orders the Yes counts by Shown name", async () => {
+    const { app, alice, bob, history } = await setUp();
+    app.clock.set(RESET_4_NOV);
+    await app.runScheduled();
+    expect(yesCountLines(mainOf(await (await alice.get(history)).text()))).toEqual(["Alice: Yes 0 of 1", "Bob: Yes 0 of 1"]);
+
+    await bob.post("/profile", { intent: "names", username: "Bob", displayName: "Aaron", colour: "sky" });
+
+    expect(yesCountLines(mainOf(await (await alice.get(history)).text()))).toEqual(["Aaron: Yes 0 of 1", "Alice: Yes 0 of 1"]);
+  });
+
   it("keeps a Member who has left, marked (left the Group)", async () => {
     const { app, alice, ids, groups, answer, friday } = await setUp();
     await answer(ids.bob, "yes");
@@ -345,6 +376,7 @@ describe("History access", () => {
 describe("sortYesCounts", () => {
   const count = (username: string, yes: number, nights: number): YesCount => ({
     memberId: username.length,
+    shownName: username,
     username,
     colour: "blue",
     yes,
