@@ -24,7 +24,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `workers/app.ts` | The Worker entry: `fetch` (the app) and `scheduled` (the hourly Cron Trigger) |
 | `app/` | React Router app: `root.tsx`, `routes.ts`, and route modules in `app/routes/` |
 | `app/services.ts` | The Clock and Push sender interfaces and their production versions |
-| `app/auth/` | Auth: passwords, sessions, Setup Links, username, Display Name and password rules, the Shown name, the avatar palette, the `Origin` check |
+| `app/auth/` | Auth: passwords, sessions, Setup Links, Password Reset Links, username, Display Name and password rules, the Shown name, the avatar palette, the `Origin` check |
 | `app/game-night.ts` | `gameNightOf()`: the Game Night of an instant, the UTC+4 date of the most recent 06:00 UTC+4; `zoneDayTime()` shows a time in that zone |
 | `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule, the Group page read) and Check-ins (Availability, Note, the Game On statement, tonight's Boards) |
 | `app/invites.ts` | Invites: the label rule, Owner-only make, list and cancel, and joining a Group with an Invite |
@@ -37,6 +37,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `test/` | Tests and the test harness |
 | `scripts/operator-setup.sh` | One-time Operator setup wizard |
 | `scripts/setup-link.ts` | Operator command that prints a Setup Link |
+| `scripts/reset-link.ts` | Operator command that prints a Password Reset Link |
 | `.github/workflows/deploy.yml` | Deploy pipeline |
 
 ## Local development
@@ -122,6 +123,31 @@ hour) and redirects to `/setup`, so no later URL or log line carries it.
 Treat the link like a password until it is used: anyone holding it can create
 a login.
 
+### Password Reset Link
+
+```sh
+npm run operator:reset-link -- <username>
+```
+
+Prints `https://daily-checkin.hurshm05.workers.dev/reset/<token>` for the
+Member with that username. It is for an Owner with nobody else to ask; any
+other Member gets a link from an Owner of their Group (see *Password Reset
+Links*).
+
+- The username is matched as login matches it: trimmed and in any casing.
+  Quote a username with spaces or an apostrophe for the shell, such as
+  `"Zoë O'Brien"`.
+- An unknown username prints `No login named <username>.` to standard error,
+  exits 1 and issues no link.
+- The link works once and expires 1 hour after it is printed. Issuing one
+  cancels every older usable link for that Member, including an Owner's.
+- `--local` targets the local D1 and prints a `http://localhost:5173` link.
+- Only the link goes to standard output; wrangler's messages go to standard
+  error. The command exits non-zero, printing no link, when wrangler fails.
+
+Treat the link like a password until it is used: anyone holding it can set
+that Member's password.
+
 ### Login limits
 
 Wrong passwords are limited, with no Operator command needed to clear them:
@@ -190,7 +216,9 @@ The Owner runs the Group from its page (`/groups/<id>`):
 - **Owner actions:** **Delete Group** deletes the Group, its Board and its
   night state for everyone. Each Member's Check-ins stay.
 
-Make Owner, Remove and Delete Group need a second tap within 4 seconds. Any
+Make Owner, Remove and Delete Group need a second tap within 4 seconds.
+**Manage** also offers **Make Password Reset Link** (see *Password Reset
+Links*). Any
 other Member sees the page read-only and gets 403 for every Owner action.
 
 Any Member leaves a Group from the **Groups** card on their profile. The Owner
@@ -202,6 +230,29 @@ Every threshold or membership change re-checks tonight's Game On in the same
 D1 batch. A Group that drops below its threshold after Game On reads Game Off,
 and the crossing sends Game On or Game Off like a Check-in would (see
 *Push notifications*).
+
+## Password Reset Links
+
+A Member who forgot their password gets a Password Reset Link from an Owner
+of one of their Groups, or from the Operator (see *Operator commands*).
+
+- On the Group page, **Manage** on another Member offers **Make Password
+  Reset Link**. The link, `/reset/<token>`, shows once in a copy box; only its
+  SHA-256 is stored. Afterwards Manage shows when the Owner's pending link
+  stops working and a **Cancel link** button.
+- A link works **once** for **1 hour**. Only its maker can cancel it, and a
+  new link for the same Member, from anyone, cancels every older one. Nobody
+  can make one for themselves: they use Change password.
+- Opening the link moves its token into a short-lived cookie (`__Host-reset`,
+  one hour) and redirects to `/reset`, so no later URL or log line carries it.
+  The page names the username and warns that every device is logged out.
+- The new password follows the Change password rules. Setting it ends every
+  session and push subscription of the Member and clears the username's login
+  failures, then sends them to log in. Their first Tonight after that shows
+  "Your password was reset. If you did not ask for this, tell your Group's
+  Owner." once.
+
+Links live in the `password_reset_links` table (migration 0010).
 
 ## Names and colour
 

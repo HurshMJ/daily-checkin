@@ -15,6 +15,7 @@
     "test": "vitest run",
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "operator:setup-link": "node scripts/setup-link.ts",
+    "operator:reset-link": "node scripts/reset-link.ts",
     "postinstall": "wrangler types"
   },
   "dependencies": {
