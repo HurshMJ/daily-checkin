@@ -59,8 +59,33 @@ export function readCookie(request: Request, name: string): string | null {
   return null;
 }
 
-/** The paths of the redirect-only link routes: `/invite/<token>` and `/setup/<token>`. */
-const LINK_PATH = /^\/(invite|setup)\/[^/]+\/?$/;
+/** The first path segment of each redirect-only link route, such as `/invite/<token>`. */
+const LINK_ROUTE_PREFIXES = ["invite", "setup"] as const;
+
+/**
+ * The redirect-only link routes' paths, matched case-insensitively like the
+ * router matches them.
+ */
+const LINK_PATH = new RegExp(`^/(${LINK_ROUTE_PREFIXES.join("|")})/[^/]+/?$`, "i");
+
+/**
+ * True when the router sends this pathname to a redirect-only link route. The
+ * path is decoded segment by segment with `%2F` kept, as the router decodes
+ * it before matching, so `/%69nvite/<token>` counts. A malformed escape counts
+ * as no match: the lookup that follows is the safe side.
+ */
+export function isLinkPath(pathname: string): boolean {
+  let decoded: string;
+  try {
+    decoded = pathname
+      .split("/")
+      .map((segment) => decodeURIComponent(segment).replace(/\//g, "%2F"))
+      .join("/");
+  } catch {
+    return false;
+  }
+  return LINK_PATH.test(decoded);
+}
 
 /**
  * The redirect-only link route: a token of the right shape goes into the link
@@ -111,7 +136,7 @@ export function authFor(context: ReadContext): Auth {
  * link routes, so a request whose URL holds a token never touches D1.
  */
 export const sessionMiddleware: MiddlewareFunction<Response> = async ({ request, context }, next) => {
-  if (LINK_PATH.test(new URL(request.url).pathname)) return next();
+  if (isLinkPath(new URL(request.url).pathname)) return next();
   const token = readCookie(request, SESSION_COOKIE);
   const member = token ? await authFor(context).resolveSession(token) : null;
   context.set(currentSessionContext, member && token ? { member, token } : null);
