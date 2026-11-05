@@ -58,7 +58,7 @@ describe("the Groups card on the profile", () => {
     const { bob } = await setUp();
     const main = mainOf(await (await bob.get("/profile")).text());
     const headings = [...main.matchAll(/<h2 id="[^"]*">([^<]*)<\/h2>/g)].map(([, text]) => text);
-    expect(headings).toEqual(["Name and colour", "Notifications", "Password", "Groups", "Sessions"]);
+    expect(headings).toEqual(["Name and colour", "Notifications", "Password", "Groups", "Sessions", "Delete login"]);
   });
 
   it("gives a Member a Leave button described by the Group's name", async () => {

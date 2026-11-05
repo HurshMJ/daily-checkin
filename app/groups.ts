@@ -73,6 +73,49 @@ export interface MembershipView {
   memberCount: number;
 }
 
+/**
+ * True when the Member owns the Group with at least one other Member in it:
+ * leaving it, or deleting their login, waits until they make another Member
+ * Owner. The SQL twin is `ownedGroupsWithOthers`.
+ */
+export function mustHandOver(group: MembershipView): boolean {
+  return group.isOwner && group.memberCount > 1;
+}
+
+/** A Group the Member owns with other Members, as the Delete login card links to it. */
+export interface OwnedGroup {
+  groupId: number;
+  name: string;
+}
+
+/** The Groups the Member owns with at least one other Member, oldest first. */
+export async function ownedGroupsWithOthers(db: D1Database, memberId: number): Promise<OwnedGroup[]> {
+  const { results } = await db
+    .prepare(
+      `SELECT g.id, g.name FROM groups g
+       WHERE g.owner_id = ?1 AND EXISTS (SELECT 1 FROM memberships m WHERE m.group_id = g.id AND m.member_id <> ?1)
+       ORDER BY g.created_at, g.id`,
+    )
+    .bind(memberId)
+    .all<{ id: number; name: string }>();
+  return results.map((row) => ({ groupId: row.id, name: row.name }));
+}
+
+/**
+ * Deletes every Group the Member owns with nobody else in it, with its Board
+ * and History by ON DELETE CASCADE. A Group someone else is in is kept, so a
+ * Member who joins between a check and this statement keeps their Group and
+ * the deletion of its Owner then fails the groups.owner_id foreign key.
+ */
+export function deleteGroupsOwnedAloneStatement(db: D1Database, memberId: number): D1PreparedStatement {
+  return db
+    .prepare(
+      `DELETE FROM groups WHERE owner_id = ?1
+       AND NOT EXISTS (SELECT 1 FROM memberships m WHERE m.group_id = groups.id AND m.member_id <> ?1)`,
+    )
+    .bind(memberId);
+}
+
 export type CreateGroupResult = { ok: true; groupId: number } | { ok: false; error: string; name: string };
 
 /**
