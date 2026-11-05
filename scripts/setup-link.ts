@@ -12,7 +12,7 @@ import { spawnSync } from "node:child_process";
 import { hashToken, randomToken } from "../app/auth/crypto.ts";
 import { setupLinkLabelError, setupLinkStatements } from "../app/auth/setup-link-sql.ts";
 
-const PRODUCTION_URL = "https://daily-checkin.hurshm05.workers.dev";
+const PRODUCTION_URL = "https://daily-checkin.gamecheckin.workers.dev";
 const LOCAL_URL = "http://localhost:5173";
 const USAGE = "Usage: npm run operator:setup-link -- <label> [--local]";
 

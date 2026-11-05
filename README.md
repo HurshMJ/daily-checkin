@@ -104,7 +104,7 @@ the command line.
 npm run operator:setup-link -- <label>
 ```
 
-Prints `https://daily-checkin.hurshm05.workers.dev/setup/<token>`. Opening it
+Prints `https://daily-checkin.gamecheckin.workers.dev/setup/<token>`. Opening it
 lets one person create a login (username, password and avatar colour) without
 joining any Group; it is how the very first Member gets in.
 Opening it moves the token into a short-lived cookie (`__Host-setup`, one
@@ -129,7 +129,7 @@ a login.
 npm run operator:reset-link -- <username>
 ```
 
-Prints `https://daily-checkin.hurshm05.workers.dev/reset/<token>` for the
+Prints `https://daily-checkin.gamecheckin.workers.dev/reset/<token>` for the
 Member with that username. It is for an Owner with nobody else to ask; any
 other Member gets a link from an Owner of their Group (see *Password Reset
 Links*).

@@ -71,7 +71,7 @@ jobs:
       # already live and broken: roll back or fix forward (README, Deploying).
       - name: Smoke login
         env:
-          APP_URL: https://daily-checkin.hurshm05.workers.dev
+          APP_URL: https://daily-checkin.gamecheckin.workers.dev
           SMOKE_USERNAME: ${{ secrets.SMOKE_USERNAME }}
           SMOKE_PASSWORD: ${{ secrets.SMOKE_PASSWORD }}
         run: |
