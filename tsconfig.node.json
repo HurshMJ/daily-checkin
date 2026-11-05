@@ -6,7 +6,9 @@
     "react-router.config.ts",
     "scripts/**/*",
     "app/auth/crypto.ts",
-    "app/auth/setup-link-sql.ts"
+    "app/auth/setup-link-sql.ts",
+    "app/auth/reset-link-sql.ts",
+    "app/text-rules.ts"
   ],
   "compilerOptions": {
     "composite": true,

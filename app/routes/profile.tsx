@@ -1,8 +1,8 @@
-import { data, Form, redirect, useNavigation } from "react-router";
+import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import { hashToken } from "~/auth/crypto";
 import { clientIp } from "~/auth/login-limits";
-import { authFor, currentSession, requireMember } from "~/auth/request";
+import { authFor, clearedSessionCookie, currentSession, requireMember } from "~/auth/request";
 import { type ProfileNamesErrors, shownName, validateProfileNames } from "~/auth/rules";
 import { AvatarDot } from "~/components/avatar-dot";
 import { FieldError } from "~/components/field-error";
@@ -12,7 +12,7 @@ import { Notice } from "~/components/notice";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
 import { CONFIRM_FIELD, isConfirmed, TapAgainButton } from "~/components/tap-again-button";
 import { TopBar } from "~/components/top-bar";
-import { createGroups, type MembershipView } from "~/groups";
+import { createGroups, type MembershipView, mustHandOver, type OwnedGroup } from "~/groups";
 import { createPush } from "~/push";
 import { appContext } from "~/services";
 
@@ -21,6 +21,7 @@ import type { Route } from "./+types/profile";
 const LOGOUT = "/logout";
 const LOGOUT_EVERYWHERE = "/logout-everywhere";
 const NAMES_INTENT = "names";
+const DELETE_LOGIN_INTENT = "delete-login";
 
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Profile · Daily Check-in" }];
@@ -66,6 +67,12 @@ interface NamesRefused {
   values: { username: string; displayName: string; colour: string };
 }
 
+/** A refused Delete login: the password field's error, or the Groups to hand over first. */
+interface DeleteLoginRefused {
+  error: string | null;
+  groups: OwnedGroup[] | null;
+}
+
 /** What every action result holds when the post did not touch that card. */
 const UNCHANGED = {
   errors: {} as PasswordErrors,
@@ -73,13 +80,14 @@ const UNCHANGED = {
   armedLeave: null as number | null,
   notificationsSaved: false,
   names: null as NamesRefused | null,
+  deleteLogin: null as DeleteLoginRefused | null,
 };
 
 /**
  * Change password, save the name and colour card when the intent field is
- * "names", leave a Group when it is "leave", or save the notification toggles
- * when it is "notifications". Typed passwords are never sent back to the
- * page. Leaving acts only when the tap-again button confirmed it; an
+ * "names", leave a Group when it is "leave", save the notification toggles
+ * when it is "notifications", or delete the login when it is "delete-login".
+ * Typed passwords are never sent back to the page. Leaving acts only when the tap-again button confirmed it; an
  * unconfirmed post returns the page with that Group's Leave button armed.
  */
 export async function action({ request, context }: Route.ActionArgs) {
@@ -97,6 +105,22 @@ export async function action({ request, context }: Route.ActionArgs) {
       colour: String(form.get("colour") ?? ""),
     };
     return data({ ...UNCHANGED, names: { errors: result.errors, values } }, { status: 400 });
+  }
+
+  if (form.get("intent") === DELETE_LOGIN_INTENT) {
+    const result = await authFor(context).deleteLogin(member, String(form.get("password") ?? ""), clientIp(request));
+    if (result.ok) {
+      return redirect("/login?notice=login-deleted", { headers: { "Set-Cookie": clearedSessionCookie() } });
+    }
+    const deleteLogin: DeleteLoginRefused =
+      result.reason === "owns-groups"
+        ? { error: null, groups: result.groups }
+        : {
+            error: result.reason === "limited" ? "Too many wrong passwords. Try again later." : "That is not your password.",
+            groups: null,
+          };
+    const status = result.reason === "owns-groups" ? 409 : result.reason === "limited" ? 429 : 400;
+    return data({ ...UNCHANGED, deleteLogin }, { status });
   }
 
   if (form.get("intent") === NOTIFICATIONS_INTENT) {
@@ -145,7 +169,12 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
   const submitting = useSubmitting();
   const intent = navigation.formData?.get("intent");
   const changingPassword =
-    submitting && intent !== "leave" && intent !== NOTIFICATIONS_INTENT && intent !== NAMES_INTENT;
+    submitting &&
+    intent !== "leave" &&
+    intent !== NOTIFICATIONS_INTENT &&
+    intent !== NAMES_INTENT &&
+    intent !== DELETE_LOGIN_INTENT;
+  const deletingLogin = submitting && intent === DELETE_LOGIN_INTENT;
   const savingNotifications = submitting && intent === NOTIFICATIONS_INTENT;
   const savingNames = submitting && intent === NAMES_INTENT;
   const errors: PasswordErrors = actionData?.errors ?? {};
@@ -164,8 +193,7 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
           </div>
         </header>
         {/* One card per settings topic, in spec order: name and colour,
-            notifications, password, Groups, sessions, delete login. Delete
-            login comes in a later ticket. */}
+            notifications, password, Groups, sessions, delete login. */}
         <NamesCard
           username={loaderData.username}
           displayName={loaderData.displayName}
@@ -259,6 +287,14 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
             <p className="card-hint">Log out everywhere ends the login on all your devices, including this one.</p>
           </Form>
         </section>
+        <DeleteLoginCard
+          handOver={
+            actionData?.deleteLogin?.groups ??
+            loaderData.groups.filter(mustHandOver).map((group) => ({ groupId: group.groupId, name: group.name }))
+          }
+          error={actionData?.deleteLogin?.error ?? null}
+          deleting={deletingLogin}
+        />
       </main>
     </>
   );
@@ -344,6 +380,71 @@ function NamesCard({
 }
 
 /**
+ * Delete login: the password confirms it. While the Member owns a Group with
+ * other Members, the card lists those Groups, linked to their pages where
+ * Make Owner is, instead of the form.
+ */
+function DeleteLoginCard({
+  handOver,
+  error,
+  deleting,
+}: {
+  handOver: OwnedGroup[];
+  error: string | null;
+  deleting: boolean;
+}) {
+  return (
+    <section className="card" aria-labelledby="delete-login-heading">
+      <h2 id="delete-login-heading">Delete login</h2>
+      {handOver.length > 0 ? (
+        <>
+          <Notice tone="warning" title="Make another Member Owner first">
+            You own Groups with other Members. Open each one and make another Member Owner, then delete your login.
+          </Notice>
+          <ul className="list" aria-label="Groups to hand over">
+            {handOver.map((group) => (
+              <li key={group.groupId} className="list-tile">
+                <Link className="list-tile-name" to={`/groups/${group.groupId}`}>
+                  {group.name}
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </>
+      ) : (
+        <Form method="post" className="page-form" noValidate>
+          <input type="hidden" name="intent" value={DELETE_LOGIN_INTENT} />
+          <p className="card-hint">
+            Deletes your login, your Check-ins and your History rows for good, and any Group you are the only Member
+            of. Nobody is told.
+          </p>
+          <div className="field">
+            <label className="field-label" htmlFor="delete-password">Your password</label>
+            <input
+              className="field-input"
+              id="delete-password"
+              name="password"
+              type="password"
+              autoComplete="current-password"
+              required
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? "delete-password-error" : undefined}
+            />
+            {error ? <FieldError id="delete-password-error">{error}</FieldError> : null}
+          </div>
+          <SubmitButton
+            pending={deleting}
+            label="Delete login"
+            pendingLabel="Deleting login…"
+            className="btn-destructive"
+          />
+        </Form>
+      )}
+    </section>
+  );
+}
+
+/**
  * The Member's Groups, each with Leave behind a tap-again button. An Owner
  * with other Members has no Leave button, only the hint to hand over first;
  * an Owner who is the last Member deletes the Group by leaving.
@@ -376,7 +477,6 @@ function GroupsCard({
         <ul className="list">
           {groups.map((group) => {
             const nameId = `group-${group.groupId}-name`;
-            const others = group.memberCount - 1;
             return (
               <li key={group.groupId} className="list-tile">
                 <span className="list-tile-text">
@@ -387,11 +487,11 @@ function GroupsCard({
                     {group.isOwner ? "Owner · " : ""}
                     {group.memberCount === 1 ? "1 Member" : `${group.memberCount} Members`}
                   </span>
-                  {group.isOwner && others > 0 ? (
+                  {mustHandOver(group) ? (
                     <span className="list-tile-detail">Make another Member Owner first</span>
                   ) : null}
                 </span>
-                {group.isOwner && others > 0 ? null : (
+                {mustHandOver(group) ? null : (
                   <Form method="post" className="list-tile-action">
                     <input type="hidden" name="intent" value="leave" />
                     <input type="hidden" name="groupId" value={group.groupId} />

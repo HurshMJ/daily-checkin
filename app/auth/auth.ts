@@ -1,3 +1,4 @@
+import { deleteGroupsOwnedAloneStatement, type OwnedGroup, ownedGroupsWithOthers } from "~/groups";
 import { claimInviteStatement, joinMembershipStatement } from "~/invites";
 import type { Clock } from "~/services";
 
@@ -35,6 +36,11 @@ export interface CurrentMember {
   /** Null when the Member has not chosen one and shows their username. */
   displayName: string | null;
   colour: AvatarColour;
+  /**
+   * True when a Password Reset Link set the password and the Member has not
+   * yet seen the "your password was reset" notice.
+   */
+  passwordWasReset: boolean;
 }
 
 export type CreateLoginResult =
@@ -47,6 +53,14 @@ export type ChangePasswordResult =
   | { ok: true }
   | { ok: false; reason: "limited" | "wrong-current" }
   | { ok: false; reason: "new-password"; message: string };
+
+export type DeleteLoginResult =
+  | { ok: true }
+  | { ok: false; reason: "limited" | "wrong-password" }
+  | { ok: false; reason: "owns-groups"; groups: OwnedGroup[] };
+
+// D1's message when deleting a Member who still owns a Group.
+const FOREIGN_KEY_FAILED = /FOREIGN KEY constraint failed/;
 
 // D1's message when an insert or update hits a name another Member holds:
 // the name_keys primary key, or the login key on members.
@@ -67,6 +81,22 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
 
   function sessionExpiry(now: Date): string {
     return new Date(now.getTime() + SESSION_LIFETIME_MS).toISOString();
+  }
+
+  /**
+   * True when a normalised password matches the Member's stored hash. One
+   * PBKDF2 run; a password longer than any login can have costs no lookup.
+   */
+  async function isStoredPassword(memberId: number, password: string): Promise<boolean> {
+    if (passwordTooLong(password)) return false;
+    const row = await db
+      .prepare("SELECT password_hash, password_salt, password_iterations FROM members WHERE id = ?1")
+      .bind(memberId)
+      .first<{ password_hash: string; password_salt: string; password_iterations: number }>();
+    return (
+      row !== null &&
+      (await verifyPassword(password, { hash: row.password_hash, salt: row.password_salt, iterations: row.password_iterations }))
+    );
   }
 
   /** Ends every session of a Member except the one with this token. */
@@ -246,21 +276,7 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
       const key = usernameKey(member.username);
       if (!(await limits.admit(key, ip))) return { ok: false, reason: "limited" };
 
-      const current = normalisePassword(typedCurrent);
-      const row = passwordTooLong(current)
-        ? null
-        : await db
-            .prepare("SELECT password_hash, password_salt, password_iterations FROM members WHERE id = ?1")
-            .bind(member.id)
-            .first<{ password_hash: string; password_salt: string; password_iterations: number }>();
-      const matches =
-        row !== null &&
-        (await verifyPassword(current, {
-          hash: row.password_hash,
-          salt: row.password_salt,
-          iterations: row.password_iterations,
-        }));
-      if (!matches) {
+      if (!(await isStoredPassword(member.id, normalisePassword(typedCurrent)))) {
         await limits.recordFailure(key, ip);
         return { ok: false, reason: "wrong-current" };
       }
@@ -279,6 +295,43 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
         limits.clearUsername(key),
         await endOtherSessionsStatement(member.id, keepToken),
       ]);
+      return { ok: true };
+    },
+
+    /**
+     * Deletes a Member's login after checking their password, within the same
+     * login limits as logging in: a wrong password counts as a failed login,
+     * and a locked username or limited IP is refused before any PBKDF2 work.
+     * A Member who owns a Group with anyone else in it is refused with those
+     * Groups. Otherwise one D1 batch, which is one transaction, deletes the
+     * Groups they own alone, their username's login failures and their
+     * members row; ON DELETE CASCADE erases their sessions, push
+     * subscriptions, memberships, Check-ins, History rows, notification
+     * toggles, name keys and Password Reset Links, so their names are free at
+     * once. A Group gaining a Member between the check and the batch fails the
+     * groups.owner_id foreign key and rolls the batch back. Nobody is notified.
+     */
+    async deleteLogin(member: CurrentMember, typedPassword: string, ip: string): Promise<DeleteLoginResult> {
+      const key = usernameKey(member.username);
+      if (!(await limits.admit(key, ip))) return { ok: false, reason: "limited" };
+
+      if (!(await isStoredPassword(member.id, normalisePassword(typedPassword)))) {
+        await limits.recordFailure(key, ip);
+        return { ok: false, reason: "wrong-password" };
+      }
+
+      const owned = await ownedGroupsWithOthers(db, member.id);
+      if (owned.length > 0) return { ok: false, reason: "owns-groups", groups: owned };
+      try {
+        await db.batch([
+          deleteGroupsOwnedAloneStatement(db, member.id),
+          limits.clearUsername(key),
+          db.prepare("DELETE FROM members WHERE id = ?1").bind(member.id),
+        ]);
+      } catch (error) {
+        if (!FOREIGN_KEY_FAILED.test(String(error))) throw error;
+        return { ok: false, reason: "owns-groups", groups: await ownedGroupsWithOthers(db, member.id) };
+      }
       return { ok: true };
     },
 
@@ -309,17 +362,7 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
         if (!(await limits.admit(usernameKey(member.username), ip))) {
           return { ok: false, errors: { username: "Too many tries. Try again later." } };
         }
-        const row = await db
-          .prepare("SELECT password_hash, password_salt, password_iterations FROM members WHERE id = ?1")
-          .bind(member.id)
-          .first<{ password_hash: string; password_salt: string; password_iterations: number }>();
-        const isPassword =
-          row !== null &&
-          (await verifyPassword(normalisePassword(form.username), {
-            hash: row.password_hash,
-            salt: row.password_salt,
-            iterations: row.password_iterations,
-          }));
+        const isPassword = await isStoredPassword(member.id, normalisePassword(form.username));
         await limits.recordIpFailure(ip);
         if (isPassword) return { ok: false, errors: { username: USERNAME_IS_PASSWORD_MESSAGE } };
       }
@@ -366,19 +409,35 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     async resolveSession(token: string): Promise<CurrentMember | null> {
       const now = clock.now();
       const tokenHash = await hashToken(token);
-      const [, found] = await db.batch<CurrentMember>([
+      const [, found] = await db.batch<Omit<CurrentMember, "passwordWasReset"> & { passwordResetNotice: number }>([
         db
           .prepare("UPDATE sessions SET expires_at = ?1 WHERE token_hash = ?2 AND expires_at > ?3")
           .bind(sessionExpiry(now), tokenHash, now.toISOString()),
         db
           .prepare(
-            `SELECT m.id, m.username, m.display_name AS displayName, m.colour
+            `SELECT m.id, m.username, m.display_name AS displayName, m.colour, m.password_reset_notice AS passwordResetNotice
              FROM sessions s JOIN members m ON m.id = s.member_id
              WHERE s.token_hash = ?1 AND s.expires_at > ?2`,
           )
           .bind(tokenHash, now.toISOString()),
       ]);
-      return found.results[0] ?? null;
+      const row = found.results[0];
+      if (!row) return null;
+      const { passwordResetNotice, ...member } = row;
+      return { ...member, passwordWasReset: passwordResetNotice === 1 };
+    },
+
+    /**
+     * Clears the Member's "your password was reset" flag. True only for the
+     * one call that cleared it, so the notice shows once even when two pages
+     * load at the same time.
+     */
+    async takePasswordResetNotice(memberId: number): Promise<boolean> {
+      const result = await db
+        .prepare("UPDATE members SET password_reset_notice = 0 WHERE id = ?1 AND password_reset_notice = 1")
+        .bind(memberId)
+        .run();
+      return result.meta.changes === 1;
     },
 
     /** Ends one session: Log out on this device. */

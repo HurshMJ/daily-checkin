@@ -3,6 +3,7 @@ import { env } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { randomToken } from "~/auth/crypto";
+import { isLinkPath } from "~/auth/request";
 import { createInvites } from "~/invites";
 
 import { createWorker } from "../workers/app";
@@ -38,6 +39,7 @@ describe("opening a link moves its token into a cookie", () => {
   it.each([
     ["invite", "__Host-invite"],
     ["setup", "__Host-setup"],
+    ["reset", "__Host-reset"],
   ])("GET /%s/<token> answers 303 to a URL with no token and sets %s", async (kind, cookie) => {
     const token = randomToken();
     const response = await startApp().fetch(`/${kind}/${token}`);
@@ -49,7 +51,7 @@ describe("opening a link moves its token into a cookie", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it.each(["invite", "setup"])("sets no cookie for a token of the wrong shape on /%s", async (kind) => {
+  it.each(["invite", "setup", "reset"])("sets no cookie for a token of the wrong shape on /%s", async (kind) => {
     const app = startApp();
     for (const bad of ["not-a-real-token", `${randomToken()}x`, `${randomToken().slice(1)}=`, "a".repeat(42)]) {
       const response = await app.fetch(`/${kind}/${encodeURIComponent(bad)}`);
@@ -59,7 +61,7 @@ describe("opening a link moves its token into a cookie", () => {
     }
   });
 
-  it.each(["invite", "setup"])("refuses any other method on /%s/<token> with 405", async (kind) => {
+  it.each(["invite", "setup", "reset"])("refuses any other method on /%s/<token> with 405", async (kind) => {
     const app = startApp();
     const browser = app.device();
     const response = await browser.post(`/${kind}/${randomToken()}`, { intent: "join" });
@@ -78,7 +80,20 @@ describe("opening a link moves its token into a cookie", () => {
     });
     const worker = createWorker({ clock: fixedClock("2026-11-03T12:00:00Z"), push: recordingPushSender() });
 
-    for (const path of [`/invite/${randomToken()}`, `/setup/${randomToken()}`, "/invite/not-a-real-token"]) {
+    const token = randomToken();
+    const paths = [
+      `/invite/${token}`,
+      `/setup/${token}`,
+      `/reset/${token}`,
+      "/invite/not-a-real-token",
+      // The router matches case-insensitively and on the decoded path.
+      `/Invite/${token}`,
+      `/SETUP/${token}`,
+      `/Reset/${token}`,
+      `/%69nvite/${token}`,
+      `/invite/${token}/`,
+    ];
+    for (const path of paths) {
       const ctx = createExecutionContext();
       const request = new Request(new URL(path, APP_ORIGIN), { headers: { Cookie: `__Host-session=${randomToken()}` } });
       const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, DB: throwingDb }, ctx);
@@ -88,6 +103,37 @@ describe("opening a link moves its token into a cookie", () => {
     expect(log).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
     expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("the session skip covers only the link routes", () => {
+  const renewed = (response: Response) =>
+    response.headers.getSetCookie().some((cookie) => cookie.startsWith("__Host-session="));
+
+  it("matches the link routes as the router does and nothing else", () => {
+    const token = randomToken();
+    for (const path of [`/invite/${token}`, `/Invite/${token}`, `/SETUP/${token}`, `/RESET/${token}`, `/%69nvite/${token}`, `/invite/${token}/`, "/invite/a%2Fb"]) {
+      expect(isLinkPath(path), path).toBe(true);
+    }
+    for (const path of ["/invites", "/invite", "/invite/", "/reset", "/resets/a", "/profile", "/invite/a/b", "/invitex/a", "/x/invite/a", "/%E0%A4%A/x", "/invite/%E0%A4%A"]) {
+      expect(isLinkPath(path), path).toBe(false);
+    }
+  });
+
+  it("still resolves and renews the session on /invite and /profile", async () => {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+    for (const path of ["/invite", "/profile"]) {
+      expect(renewed(await alice.get(path)), path).toBe(true);
+    }
+  });
+
+  it("treats a malformed escape as no match and does not throw", async () => {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+    const response = await alice.get("/invite/%E0%A4%A");
+    expect(response.status).toBe(303);
+    expect(renewed(response)).toBe(true);
   });
 });
 

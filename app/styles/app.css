@@ -1115,6 +1115,15 @@ input {
   width: 100%;
 }
 
+/* The Owner's pending Password Reset Link inside Manage: when it stops
+   working, and its Cancel button at the right. */
+.manage-reset {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
 /* Threshold stepper: round − and + buttons around the value, such as "3 Yes". */
 .stepper {
   display: flex;
