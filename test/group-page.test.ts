@@ -402,3 +402,76 @@ describe("Owner settings on the Group page", () => {
     expect(mainOf(await (await alice.get("/")).text())).toContain('<p class="board-pill">Game On</p>');
   });
 });
+
+describe("Password Reset Links on the Group page", () => {
+  async function linkRows(): Promise<{ member_id: number; made_by: number | null; used_at: string | null; cancelled_at: string | null }[]> {
+    const { results } = await env.DB.prepare("SELECT member_id, made_by, used_at, cancelled_at FROM password_reset_links").all<{
+      member_id: number;
+      made_by: number | null;
+      used_at: string | null;
+      cancelled_at: string | null;
+    }>();
+    return results;
+  }
+
+  it("offers Make Password Reset Link in each other Member's Manage, described by that Member", async () => {
+    const { alice, bob, page } = await setUp();
+    const bobId = await idOf("members", "username", "Bob");
+    const main = mainOf(await (await alice.get(page)).text());
+    expect(main).toMatch(
+      new RegExp(`<button[^>]*aria-describedby="member-${bobId}-name"[^>]*>Make Password Reset Link</button>`),
+    );
+    expect(main.match(/Make Password Reset Link/g)).toHaveLength(1);
+    expect(mainOf(await (await bob.get(page)).text())).not.toContain("Password Reset Link");
+  });
+
+  it("shows a new link once, open in Manage, then only when it stops working and a Cancel", async () => {
+    const { app, alice, page } = await setUp();
+    const bobId = await idOf("members", "username", "Bob");
+    const made = await alice.post(page, { intent: "reset-link", memberId: String(bobId) });
+    expect(made.status).toBe(200);
+    expect(made.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(made.headers.get("Cache-Control")).toBe("no-store");
+    const main = mainOf(await made.text());
+    const link = main.match(/<input[^>]*id="reset-link-\d+"[^>]*value="([^"]*)"/)?.[1] ?? "";
+    expect(link).toMatch(new RegExp(`^${APP_ORIGIN}/reset/[A-Za-z0-9_-]{43}$`));
+    expect(main).toContain("New Password Reset Link for Bob");
+    expect(main).toContain("It works once, for 1 hour.");
+    expect(main).toMatch(/<details class="manage" open="">/);
+
+    const token = link.slice(link.lastIndexOf("/") + 1);
+    const later = mainOf(await (await alice.get(page)).text());
+    expect(later).not.toContain(token);
+    // Made at 12:01 UTC, so it works until 17:01 in UTC+4.
+    expect(later).toContain(`Password Reset Link works until ${zoneDayTime(new Date("2026-11-03T13:01:00Z"))}`);
+    expect(later).toMatch(/<button[^>]*>Cancel link<\/button>/);
+
+    expect((await app.device().open(new URL(link).pathname)).status).toBe(200);
+  });
+
+  it("cancels the Owner's pending link: it drops out and stops working", async () => {
+    const { app, alice, page } = await setUp();
+    const bobId = await idOf("members", "username", "Bob");
+    const made = mainOf(await (await alice.post(page, { intent: "reset-link", memberId: String(bobId) })).text());
+    const path = new URL(made.match(/value="(https:[^"]+\/reset\/[^"]+)"/)![1]).pathname;
+
+    const cancelled = await alice.post(page, { intent: "cancel-reset-link", memberId: String(bobId) });
+    expect(cancelled.status).toBe(303);
+    expect(mainOf(await (await alice.get(page)).text())).not.toContain("Cancel link");
+    expect((await app.device().open(path)).status).toBe(404);
+  });
+
+  it("refuses a non-Owner with 403 and makes nothing for the Owner themselves", async () => {
+    const { alice, bob, page } = await setUp();
+    const aliceId = await idOf("members", "username", "Alice");
+    const bobId = await idOf("members", "username", "Bob");
+    expect((await bob.post(page, { intent: "reset-link", memberId: String(aliceId) })).status).toBe(403);
+    expect((await bob.post(page, { intent: "cancel-reset-link", memberId: String(aliceId) })).status).toBe(403);
+    expect((await alice.post(page, { intent: "reset-link", memberId: String(aliceId) })).status).toBe(303);
+    expect((await alice.post(page, { intent: "reset-link", memberId: "x" })).status).toBe(400);
+    expect(await linkRows()).toEqual([]);
+
+    await alice.post(page, { intent: "reset-link", memberId: String(bobId) });
+    expect(await linkRows()).toEqual([{ member_id: bobId, made_by: aliceId, used_at: null, cancelled_at: null }]);
+  });
+});

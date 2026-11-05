@@ -166,6 +166,7 @@ describe("saveProfileNames", () => {
       username: "Alice",
       displayName: "Ace 🎯",
       colour: "pink",
+      passwordWasReset: false,
     });
   });
 

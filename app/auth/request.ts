@@ -12,12 +12,14 @@ import { isTokenShaped } from "./crypto";
 export const SESSION_COOKIE = "__Host-session";
 
 /**
- * The link cookies. Opening `/invite/<token>` or `/setup/<token>` moves the
- * token into one of these and redirects to a page whose URL holds no token.
+ * The link cookies. Opening `/invite/<token>`, `/setup/<token>` or
+ * `/reset/<token>` moves the token into one of these and redirects to a page
+ * whose URL holds no token.
  */
 export const INVITE_COOKIE = "__Host-invite";
 export const SETUP_COOKIE = "__Host-setup";
-export type LinkCookie = typeof INVITE_COOKIE | typeof SETUP_COOKIE;
+export const RESET_COOKIE = "__Host-reset";
+export type LinkCookie = typeof INVITE_COOKIE | typeof SETUP_COOKIE | typeof RESET_COOKIE;
 
 /** A link cookie lasts an hour, the life of a Setup Link. */
 export const LINK_COOKIE_MAX_AGE_S = 60 * 60;
@@ -60,7 +62,7 @@ export function readCookie(request: Request, name: string): string | null {
 }
 
 /** The first path segment of each redirect-only link route, such as `/invite/<token>`. */
-const LINK_ROUTE_PREFIXES = ["invite", "setup"] as const;
+const LINK_ROUTE_PREFIXES = ["invite", "setup", "reset"] as const;
 
 /**
  * The redirect-only link routes' paths, matched case-insensitively like the

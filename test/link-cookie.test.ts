@@ -39,6 +39,7 @@ describe("opening a link moves its token into a cookie", () => {
   it.each([
     ["invite", "__Host-invite"],
     ["setup", "__Host-setup"],
+    ["reset", "__Host-reset"],
   ])("GET /%s/<token> answers 303 to a URL with no token and sets %s", async (kind, cookie) => {
     const token = randomToken();
     const response = await startApp().fetch(`/${kind}/${token}`);
@@ -50,7 +51,7 @@ describe("opening a link moves its token into a cookie", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
   });
 
-  it.each(["invite", "setup"])("sets no cookie for a token of the wrong shape on /%s", async (kind) => {
+  it.each(["invite", "setup", "reset"])("sets no cookie for a token of the wrong shape on /%s", async (kind) => {
     const app = startApp();
     for (const bad of ["not-a-real-token", `${randomToken()}x`, `${randomToken().slice(1)}=`, "a".repeat(42)]) {
       const response = await app.fetch(`/${kind}/${encodeURIComponent(bad)}`);
@@ -60,7 +61,7 @@ describe("opening a link moves its token into a cookie", () => {
     }
   });
 
-  it.each(["invite", "setup"])("refuses any other method on /%s/<token> with 405", async (kind) => {
+  it.each(["invite", "setup", "reset"])("refuses any other method on /%s/<token> with 405", async (kind) => {
     const app = startApp();
     const browser = app.device();
     const response = await browser.post(`/${kind}/${randomToken()}`, { intent: "join" });
@@ -83,10 +84,12 @@ describe("opening a link moves its token into a cookie", () => {
     const paths = [
       `/invite/${token}`,
       `/setup/${token}`,
+      `/reset/${token}`,
       "/invite/not-a-real-token",
       // The router matches case-insensitively and on the decoded path.
       `/Invite/${token}`,
       `/SETUP/${token}`,
+      `/Reset/${token}`,
       `/%69nvite/${token}`,
       `/invite/${token}/`,
     ];
@@ -109,10 +112,10 @@ describe("the session skip covers only the link routes", () => {
 
   it("matches the link routes as the router does and nothing else", () => {
     const token = randomToken();
-    for (const path of [`/invite/${token}`, `/Invite/${token}`, `/SETUP/${token}`, `/%69nvite/${token}`, `/invite/${token}/`, "/invite/a%2Fb"]) {
+    for (const path of [`/invite/${token}`, `/Invite/${token}`, `/SETUP/${token}`, `/RESET/${token}`, `/%69nvite/${token}`, `/invite/${token}/`, "/invite/a%2Fb"]) {
       expect(isLinkPath(path), path).toBe(true);
     }
-    for (const path of ["/invites", "/invite", "/invite/", "/profile", "/invite/a/b", "/invitex/a", "/x/invite/a", "/%E0%A4%A/x", "/invite/%E0%A4%A"]) {
+    for (const path of ["/invites", "/invite", "/invite/", "/reset", "/resets/a", "/profile", "/invite/a/b", "/invitex/a", "/x/invite/a", "/%E0%A4%A/x", "/invite/%E0%A4%A"]) {
       expect(isLinkPath(path), path).toBe(false);
     }
   });

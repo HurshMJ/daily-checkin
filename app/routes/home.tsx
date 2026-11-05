@@ -1,6 +1,6 @@
 import { data, Form, Link, redirect, useNavigation, useSubmit } from "react-router";
 
-import { requireMember } from "~/auth/request";
+import { authFor, requireMember } from "~/auth/request";
 import { boardReachLine, createCheckins, isAvailability, MAX_NOTE_LENGTH } from "~/checkins";
 import { Board } from "~/components/board";
 import { CheckinTiles } from "~/components/checkin-tiles";
@@ -12,6 +12,8 @@ import { appContext } from "~/services";
 
 import type { Route } from "./+types/home";
 
+export const PASSWORD_RESET_NOTICE = "If you did not ask for this, tell your Group's Owner.";
+
 export const SAVE_FAILED_MESSAGE = "Your answer did not save. Your Boards still show your last saved answer.";
 
 export function meta(_: Route.MetaArgs) {
@@ -20,8 +22,12 @@ export function meta(_: Route.MetaArgs) {
 
 export async function loader({ context }: Route.LoaderArgs) {
   const member = requireMember(context);
-  const tonight = await createCheckins(context.get(appContext)).tonightFor(member.id);
-  return { colour: member.colour, memberId: member.id, ...tonight };
+  const [tonight, passwordWasReset] = await Promise.all([
+    createCheckins(context.get(appContext)).tonightFor(member.id),
+    // Shown once: the first Tonight after a Password Reset Link set the password.
+    member.passwordWasReset ? authFor(context).takePasswordResetNotice(member.id) : false,
+  ]);
+  return { colour: member.colour, memberId: member.id, passwordWasReset, ...tonight };
 }
 
 /**
@@ -76,6 +82,7 @@ export default function Tonight({ loaderData, actionData }: Route.ComponentProps
         <TopBar colour={loaderData.colour} />
         <main className="page">
           <h1>Tonight</h1>
+          <PasswordResetNotice shown={loaderData.passwordWasReset} />
           <div className="card empty-state">
             <span className="empty-ring" aria-hidden="true" />
             <h2>You're not in a Group yet</h2>
@@ -104,6 +111,7 @@ export default function Tonight({ loaderData, actionData }: Route.ComponentProps
           <h1>Tonight</h1>
           <p className="tonight-reach">{boardReachLine(loaderData.boards.length)}</p>
         </header>
+        <PasswordResetNotice shown={loaderData.passwordWasReset} />
         <section className="card checkin" aria-label="Your answer">
           <Form method="post" className="checkin-form">
             <input type="hidden" name="intent" value="availability" />
@@ -147,6 +155,16 @@ export default function Tonight({ loaderData, actionData }: Route.ComponentProps
         ))}
       </main>
     </>
+  );
+}
+
+/** The fixed notice for a Member whose password a Password Reset Link set since they last saw Tonight. */
+function PasswordResetNotice({ shown }: { shown: boolean }) {
+  if (!shown) return null;
+  return (
+    <Notice tone="warning" title="Your password was reset">
+      {PASSWORD_RESET_NOTICE}
+    </Notice>
   );
 }
 

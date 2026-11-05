@@ -2,6 +2,7 @@ import { useRef, useState } from "react";
 import { data, Form, redirect, useNavigation } from "react-router";
 
 import { requireMember } from "~/auth/request";
+import { createResetLinks } from "~/auth/reset-links";
 import { AvatarDot } from "~/components/avatar-dot";
 import { FieldError } from "~/components/field-error";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
@@ -15,7 +16,7 @@ import { appContext } from "~/services";
 
 import type { Route } from "./+types/groups.$groupId";
 
-// A new Invite link appears in the page: never send it on, never cache it.
+// A new Invite or Password Reset Link appears in the page: never send it on, never cache it.
 export function headers(_: Route.HeadersArgs) {
   return { "Referrer-Policy": "no-referrer", "Cache-Control": "no-store" };
 }
@@ -37,7 +38,11 @@ export async function loader({ params, context }: Route.LoaderArgs) {
   const member = requireMember(context);
   const group = await memberGroup(context, member.id, params.groupId);
   if (!group) throw notFound();
-  const pending = await createInvites(context.get(appContext)).pendingInvites(member.id, group.id);
+  const app = context.get(appContext);
+  const [pending, resetLinks] = await Promise.all([
+    createInvites(app).pendingInvites(member.id, group.id),
+    createResetLinks(app).pending(member.id, group.id),
+  ]);
   return {
     colour: member.colour,
     isOwner: group.ownerId === member.id,
@@ -47,6 +52,10 @@ export async function loader({ params, context }: Route.LoaderArgs) {
         id: invite.id,
         text: invite.label ?? `Made ${zoneDayTime(new Date(invite.createdAt))}`,
       })) ?? null,
+    // The Owner's own pending Password Reset Links, by Member id: when each expires.
+    resetLinks: Object.fromEntries(
+      (resetLinks ?? []).map((link) => [link.memberId, zoneDayTime(new Date(link.expiresAt))]),
+    ) as Record<number, string>,
   };
 }
 
@@ -66,7 +75,9 @@ function armedKey(intent: Destructive, memberId: number | null): string {
 /**
  * The Owner's actions. The intent field says which: "make" makes an Invite
  * and shows its link once; "cancel" cancels the pending Invite `inviteId`;
- * "rename" and "threshold" change the basics; "hand-over" (Make Owner) and
+ * "reset-link" makes a Password Reset Link for the Member `memberId` and
+ * shows it once; "cancel-reset-link" cancels the Owner's pending one for that
+ * Member; "rename" and "threshold" change the basics; "hand-over" (Make Owner) and
  * "remove" act on the Member `memberId`; "delete" deletes the Group. The last
  * three act only when the tap-again button confirmed them; an unconfirmed
  * post changes nothing and returns the page with that button armed. Anyone
@@ -107,6 +118,22 @@ export async function action({ request, params, context }: Route.ActionArgs) {
     if (!cancelled.ok && cancelled.reason === "not-owner") return forbidden();
     // A used or already-cancelled Invite simply drops out of the list.
     return back();
+  }
+
+  if (intent === "reset-link" || intent === "cancel-reset-link") {
+    if (group.ownerId !== member.id) return forbidden();
+    const target = Number(form.get("memberId"));
+    if (!Number.isSafeInteger(target)) return data({ intent: null }, { status: 400 });
+    const links = createResetLinks(app);
+    if (intent === "cancel-reset-link") {
+      // A used, expired or already-cancelled link simply drops out of the list.
+      await links.cancel(member.id, target);
+      return back();
+    }
+    const made = await links.make(member.id, target);
+    // A Member who has left, or the Owner themselves, simply gets no link.
+    if (!made.ok) return back();
+    return { intent: "reset-link" as const, memberId: target, link: `${new URL(request.url).origin}/reset/${made.token}` };
   }
 
   if (intent === "rename" || intent === "threshold") {
@@ -162,7 +189,8 @@ function failedField(actionData: ActionData, intent: "rename" | "threshold") {
  * profile.
  */
 export default function Group({ loaderData, actionData }: Route.ComponentProps) {
-  const { group, invites, isOwner } = loaderData;
+  const { group, invites, isOwner, resetLinks } = loaderData;
+  const madeResetLink = actionData && actionData.intent === "reset-link" && "link" in actionData ? actionData : null;
   const count = group.members.length;
   const armed = (actionData && "armed" in actionData ? actionData.armed : null) ?? null;
   const pendingForm = usePendingForm();
@@ -209,6 +237,8 @@ export default function Group({ loaderData, actionData }: Route.ComponentProps) 
                       nameId={nameId!}
                       armed={armed}
                       pendingIntent={pendingForm?.get("memberId") === String(member.id) ? pendingForm.get("intent") : null}
+                      resetLinkExpires={resetLinks[member.id] ?? null}
+                      madeResetLink={madeResetLink?.memberId === member.id ? madeResetLink.link : null}
                     />
                   ) : null}
                 </li>
@@ -219,7 +249,7 @@ export default function Group({ loaderData, actionData }: Route.ComponentProps) 
         {invites ? (
           <InvitesCard
             invites={invites}
-            made={(actionData && "link" in actionData ? actionData.link : null) ?? null}
+            made={(actionData && actionData.intent === "make" && "link" in actionData ? actionData.link : null) ?? null}
             failed={actionData?.intent === "make" && "error" in actionData ? actionData : null}
           />
         ) : null}
@@ -336,28 +366,70 @@ function OwnerBasics({
 
 /**
  * Manage on a Member's tile: a disclosure, so it works without JavaScript,
- * that reveals Make Owner and Remove, each behind a tap-again button. It
- * opens by itself when the server sends back one of its buttons armed.
+ * that reveals Make Password Reset Link, then Make Owner and Remove, each of
+ * those two behind a tap-again button. A new link is shown once in a copy
+ * box; the Owner's pending link shows when it expires and a Cancel. It opens
+ * by itself when the server sends back one of its buttons armed or a new link.
  */
 function Manage({
   member,
   nameId,
   armed,
   pendingIntent,
+  resetLinkExpires,
+  madeResetLink,
 }: {
   member: { id: number; shownName: string };
   nameId: string;
   armed: string | null;
   pendingIntent: FormDataEntryValue | null;
+  resetLinkExpires: string | null;
+  madeResetLink: string | null;
 }) {
   const handOverKey = armedKey("hand-over", member.id);
   const removeKey = armedKey("remove", member.id);
+  const open = armed === handOverKey || armed === removeKey || madeResetLink !== null;
+  const resetId = `member-${member.id}-reset`;
   return (
-    <details className="manage" open={armed === handOverKey || armed === removeKey ? true : undefined}>
+    <details className="manage" open={open ? true : undefined}>
       <summary className="btn-small" aria-describedby={nameId}>
         Manage
       </summary>
       <div className="manage-actions">
+        <Form method="post">
+          <input type="hidden" name="intent" value="reset-link" />
+          <input type="hidden" name="memberId" value={member.id} />
+          <SubmitButton
+            pending={pendingIntent === "reset-link"}
+            label="Make Password Reset Link"
+            pendingLabel="Making link…"
+            className="btn-small"
+            aria-describedby={nameId}
+          />
+        </Form>
+        {madeResetLink ? (
+          <CopyBox
+            id={`reset-link-${member.id}`}
+            label={`New Password Reset Link for ${member.shownName}`}
+            link={madeResetLink}
+            help="It works once, for 1 hour. Copy it now: this page will not show it again."
+          />
+        ) : resetLinkExpires ? (
+          <Form method="post" className="manage-reset">
+            <input type="hidden" name="intent" value="cancel-reset-link" />
+            <input type="hidden" name="memberId" value={member.id} />
+            <p className="card-hint" id={resetId}>
+              Password Reset Link works until {resetLinkExpires}
+            </p>
+            <SubmitButton
+              pending={pendingIntent === "cancel-reset-link"}
+              label="Cancel link"
+              pendingLabel="Cancelling…"
+              className="btn-small"
+              aria-describedby={`${resetId} ${nameId}`}
+            />
+          </Form>
+        ) : null}
         <Form method="post">
           <input type="hidden" name="intent" value="hand-over" />
           <input type="hidden" name="memberId" value={member.id} />
@@ -432,7 +504,14 @@ function InvitesCard({
           className="btn-primary"
         />
       </Form>
-      {made ? <CopyBox link={made} /> : null}
+      {made ? (
+        <CopyBox
+          id="invite-link"
+          label="New Invite link"
+          link={made}
+          help="It works once. Copy it now: this page will not show it again."
+        />
+      ) : null}
       {invites.length === 0 ? (
         <p className="card-hint">No pending Invites.</p>
       ) : (
@@ -465,11 +544,11 @@ function InvitesCard({
 }
 
 /**
- * The new Invite link, shown once: a read-only field to select, and a Copy
- * button that uses the clipboard when the browser offers it and announces
- * the result in a status line.
+ * A new link, shown once: a read-only field to select, and a Copy button that
+ * uses the clipboard when the browser offers it and announces the result in a
+ * status line. `id` names the field; `help` says how the link works.
  */
-function CopyBox({ link }: { link: string }) {
+function CopyBox({ id, label, link, help }: { id: string; label: string; link: string; help: string }) {
   const [status, setStatus] = useState("");
   const field = useRef<HTMLInputElement>(null);
   async function copy() {
@@ -484,23 +563,23 @@ function CopyBox({ link }: { link: string }) {
   }
   return (
     <div className="copy-box">
-      <label className="field-label" htmlFor="invite-link">New Invite link</label>
+      <label className="field-label" htmlFor={id}>{label}</label>
       <div className="copy-box-row">
         <input
           ref={field}
           className="field-input"
-          id="invite-link"
+          id={id}
           readOnly
           value={link}
           onFocus={(event) => event.currentTarget.select()}
-          aria-describedby="invite-link-help"
+          aria-describedby={`${id}-help`}
         />
         <button type="button" className="btn-small" onClick={copy}>
           Copy
         </button>
       </div>
-      <p id="invite-link-help" className="card-hint">
-        It works once. Copy it now: this page will not show it again.
+      <p id={`${id}-help`} className="card-hint">
+        {help}
       </p>
       <p role="status" className="copy-box-status">
         {status}

@@ -17,9 +17,25 @@ export function meta(_: Route.MetaArgs) {
   return [{ title: "Log in · Daily Check-in" }];
 }
 
-export function loader({ context }: Route.LoaderArgs) {
+/**
+ * The fixed notices another page sends here with `?notice=<key>`. Only these
+ * keys show anything, and the text lives here, never in the URL.
+ */
+const LOGIN_NOTICES = {
+  "password-set": { title: "Password set", body: "Log in with your new password." },
+  "login-deleted": { title: "Login deleted", body: "Your login was deleted." },
+} as const;
+
+type LoginNoticeKey = keyof typeof LOGIN_NOTICES;
+
+function isLoginNoticeKey(key: string | null): key is LoginNoticeKey {
+  return key !== null && Object.hasOwn(LOGIN_NOTICES, key);
+}
+
+export function loader({ request, context }: Route.LoaderArgs) {
   if (currentSession(context)) throw redirect("/");
-  return null;
+  const key = new URL(request.url).searchParams.get("notice");
+  return { notice: isLoginNoticeKey(key) ? key : null };
 }
 
 export async function action({ request, context }: Route.ActionArgs) {
@@ -32,8 +48,9 @@ export async function action({ request, context }: Route.ActionArgs) {
   return redirect("/", { headers: { "Set-Cookie": sessionCookie(token) } });
 }
 
-export default function Login({ actionData }: Route.ComponentProps) {
+export default function Login({ loaderData, actionData }: Route.ComponentProps) {
   const submitting = useSubmitting();
+  const notice = loaderData?.notice && !actionData ? LOGIN_NOTICES[loaderData.notice] : null;
   return (
     <>
       <OfflineBar />
@@ -42,12 +59,20 @@ export default function Login({ actionData }: Route.ComponentProps) {
           <h1>Daily Check-in</h1>
           <p className="login-tagline">Who's on tonight?</p>
         </header>
+        <div role="status">
+          {notice ? (
+            <Notice tone="info" title={notice.title}>
+              {notice.body}
+            </Notice>
+          ) : null}
+        </div>
         {actionData?.error ? (
           <Notice tone="error" title="Can't log in">
             {actionData.error}
           </Notice>
         ) : null}
-        <Form method="post" className="page-form">
+        {/* Posts to /login itself, so a notice key in this page's URL is not carried on. */}
+        <Form method="post" action="/login" className="page-form">
           <LoginFields username={actionData?.username} />
           <SubmitButton pending={submitting} label="Log in" pendingLabel="Logging in…" className="btn-primary" />
         </Form>

@@ -271,3 +271,138 @@ describe("the Operator's reset-link SQL", () => {
     expect(() => operatorResetLinkStatements({ memberId: 7, tokenHash: "x'", now: new Date() })).toThrow();
   });
 });
+
+/** The page's words, without the router's data or React's text markers. */
+async function mainOf(response: Response): Promise<string> {
+  const html = (await response.text()).replaceAll("<!-- -->", "");
+  return html.slice(html.indexOf("<main"), html.indexOf("</main>"));
+}
+
+const CLEARED_RESET = "__Host-reset=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/";
+
+describe("the Set a new password page", () => {
+  it("names the username, warns about every device and works without JavaScript", async () => {
+    const { app, ids, links } = await friday();
+    const token = await makeOk(links, ids.alice, ids.bob);
+    const response = await app.device().open(`/reset/${token}`);
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Referrer-Policy")).toBe("no-referrer");
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const main = await mainOf(response);
+    expect(main).toContain("<h1>Set a new password</h1>");
+    expect(main).toContain("For @Bob.");
+    expect(main).toContain("Setting a new password logs out @Bob on every device");
+    expect(main).toMatch(/<form[^>]* method="post"/);
+    expect(main).toMatch(/name="newPassword"[^>]*autoComplete="new-password"|autoComplete="new-password"[^>]*name="newPassword"/);
+    expect(main).toContain('name="confirmPassword"');
+    expect(main).not.toContain("top-bar");
+  });
+
+  it("shows the unusable notice with 404 for no cookie, and for a used, expired or cancelled link", async () => {
+    const { app, ids, links } = await friday();
+    const without = await app.device().get("/reset");
+    expect(without.status).toBe(404);
+    expect(await mainOf(without)).toContain("This Password Reset Link does not work.");
+
+    const used = await makeOk(links, ids.alice, ids.bob);
+    await links.setPassword(used, NEW_PASSWORD);
+    const expired = await makeOk(links, ids.alice, ids.bob);
+    app.clock.set("2026-11-03T13:00:00Z");
+    const cancelled = await makeOk(links, ids.alice, ids.bob);
+    await links.cancel(ids.alice, ids.bob);
+    for (const token of [used, expired, cancelled, randomToken()]) {
+      const response = await app.device().open(`/reset/${token}`);
+      expect(response.status).toBe(404);
+      expect(await mainOf(response)).toContain("Ask an Owner of your Group for a new one.");
+    }
+  });
+
+  it("refuses two different passwords or a short one and changes nothing", async () => {
+    const { app, ids, links } = await friday();
+    const browser = await app.deviceWithLink(`/reset/${await makeOk(links, ids.alice, ids.bob)}`);
+    const differ = await browser.post("/reset", { newPassword: NEW_PASSWORD, confirmPassword: "something else entirely" });
+    expect(differ.status).toBe(400);
+    const differMain = await mainOf(differ);
+    expect(differMain).toContain("The two passwords are not the same.");
+    expect(differMain).not.toContain(NEW_PASSWORD);
+
+    const short = await browser.post("/reset", { newPassword: "short", confirmPassword: "short" });
+    expect(short.status).toBe(400);
+    expect(await mainOf(short)).toContain("Use 12 to 128 characters.");
+    expect((await app.device().post("/login", { username: "Bob", password: PASSWORD })).status).toBe(302);
+  });
+
+  it("sets the password, clears the cookie and sends the Member to log in with a fixed notice", async () => {
+    const { app, bob, ids, links } = await friday();
+    const browser = await app.deviceWithLink(`/reset/${await makeOk(links, ids.alice, ids.bob)}`);
+    const response = await browser.post("/reset", { newPassword: NEW_PASSWORD, confirmPassword: NEW_PASSWORD });
+    expect(response.status).toBe(302);
+    expect(response.headers.get("Location")).toBe("/login?notice=password-set");
+    expect(response.headers.getSetCookie()).toContain(CLEARED_RESET);
+    expect(browser.cookies.has("__Host-reset")).toBe(false);
+    expect(browser.cookies.has("__Host-session")).toBe(false);
+
+    const login = await mainOf(await browser.get("/login?notice=password-set"));
+    expect(login).toContain("Password set");
+    expect(login).toContain("Log in with your new password.");
+    // Bob's phone was logged out.
+    expect((await bob.get("/")).headers.get("Location")).toBe("/login");
+  });
+
+  it("shows only the fixed login notices", async () => {
+    const app = startApp();
+    const plain = await mainOf(await app.device().get("/login"));
+    for (const key of ["anything", "<b>hi</b>", "constructor", "__proto__"]) {
+      const main = await mainOf(await app.device().get(`/login?notice=${encodeURIComponent(key)}`));
+      expect(main, key).toBe(plain);
+    }
+  });
+
+  it("puts the token in no page, link, form or Location after the first request", async () => {
+    const { app, ids, links } = await friday();
+    const token = await makeOk(links, ids.alice, ids.bob);
+    const browser = app.device();
+    const first = await browser.get(`/reset/${token}`);
+    expect(first.status).toBe(303);
+    expect(first.headers.get("Location")).toBe("/reset");
+    const later = [
+      await browser.get("/reset"),
+      await browser.post("/reset", { newPassword: "short", confirmPassword: "short" }),
+      await browser.post("/reset", { newPassword: NEW_PASSWORD, confirmPassword: NEW_PASSWORD }),
+    ];
+    expect(later.map((r) => r.status)).toEqual([200, 400, 302]);
+    for (const response of later) {
+      expect(response.headers.get("Location") ?? "").not.toContain(token);
+      expect(await response.text()).not.toContain(token);
+    }
+  });
+});
+
+describe("the notice after a reset", () => {
+  it("shows once on Tonight after the next login, never again", async () => {
+    const { app, ids, links } = await friday();
+    await links.setPassword(await makeOk(links, ids.alice, ids.bob), NEW_PASSWORD);
+
+    const bob = app.device();
+    const login = await bob.post("/login", { username: "Bob", password: NEW_PASSWORD });
+    expect(login.headers.get("Location")).toBe("/");
+    const first = await mainOf(await bob.get("/"));
+    expect(first).toContain("Your password was reset");
+    expect(first).toContain("If you did not ask for this, tell your Group&#x27;s Owner.");
+    expect(await mainOf(await bob.get("/"))).not.toContain("Your password was reset");
+
+    const again = app.device();
+    await again.post("/login", { username: "Bob", password: NEW_PASSWORD });
+    expect(await mainOf(await again.get("/"))).not.toContain("Your password was reset");
+  });
+
+  it("shows on the empty Tonight too, and never for a Member whose password was not reset", async () => {
+    const app = startApp();
+    const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+    expect(await mainOf(await alice.get("/"))).not.toContain("Your password was reset");
+    const aliceId = await idOf("Alice");
+    await env.DB.prepare("UPDATE members SET password_reset_notice = 1 WHERE id = ?1").bind(aliceId).run();
+    expect(await mainOf(await alice.get("/"))).toContain("Your password was reset");
+    expect(await mainOf(await alice.get("/"))).not.toContain("Your password was reset");
+  });
+});

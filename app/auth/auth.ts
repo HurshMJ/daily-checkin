@@ -35,6 +35,11 @@ export interface CurrentMember {
   /** Null when the Member has not chosen one and shows their username. */
   displayName: string | null;
   colour: AvatarColour;
+  /**
+   * True when a Password Reset Link set the password and the Member has not
+   * yet seen the "your password was reset" notice.
+   */
+  passwordWasReset: boolean;
 }
 
 export type CreateLoginResult =
@@ -366,19 +371,35 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     async resolveSession(token: string): Promise<CurrentMember | null> {
       const now = clock.now();
       const tokenHash = await hashToken(token);
-      const [, found] = await db.batch<CurrentMember>([
+      const [, found] = await db.batch<Omit<CurrentMember, "passwordWasReset"> & { passwordResetNotice: number }>([
         db
           .prepare("UPDATE sessions SET expires_at = ?1 WHERE token_hash = ?2 AND expires_at > ?3")
           .bind(sessionExpiry(now), tokenHash, now.toISOString()),
         db
           .prepare(
-            `SELECT m.id, m.username, m.display_name AS displayName, m.colour
+            `SELECT m.id, m.username, m.display_name AS displayName, m.colour, m.password_reset_notice AS passwordResetNotice
              FROM sessions s JOIN members m ON m.id = s.member_id
              WHERE s.token_hash = ?1 AND s.expires_at > ?2`,
           )
           .bind(tokenHash, now.toISOString()),
       ]);
-      return found.results[0] ?? null;
+      const row = found.results[0];
+      if (!row) return null;
+      const { passwordResetNotice, ...member } = row;
+      return { ...member, passwordWasReset: passwordResetNotice === 1 };
+    },
+
+    /**
+     * Clears the Member's "your password was reset" flag. True only for the
+     * one call that cleared it, so the notice shows once even when two pages
+     * load at the same time.
+     */
+    async takePasswordResetNotice(memberId: number): Promise<boolean> {
+      const result = await db
+        .prepare("UPDATE members SET password_reset_notice = 0 WHERE id = ?1 AND password_reset_notice = 1")
+        .bind(memberId)
+        .run();
+      return result.meta.changes === 1;
     },
 
     /** Ends one session: Log out on this device. */
