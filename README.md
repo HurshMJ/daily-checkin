@@ -254,6 +254,23 @@ of one of their Groups, or from the Operator (see *Operator commands*).
 
 Links live in the `password_reset_links` table (migration 0010).
 
+## Deleting a login
+
+The profile's last card, **Delete login**, deletes the Member's login for
+good once they type their password.
+
+- The password check counts like a login: a wrong password is a failed login,
+  and a locked username or limited IP is refused (see *Login limits*).
+- While the Member owns a Group with other Members, the card lists those
+  Groups, each linked to its page, instead of the form: they make another
+  Member Owner first.
+- Groups the Member is the only Member of are deleted with their Board and
+  History. Their sessions, push subscriptions, memberships, Check-ins, History
+  rows, notification toggles and Password Reset Links go too, all in one D1
+  batch; other Members' past nights keep their own rows.
+- The username and Display Name are free for anyone at once.
+- Nobody is notified.
+
 ## Names and colour
 
 The **Name and colour** card heads the profile. A Member changes their
