@@ -22,7 +22,7 @@
 		// While it is empty, the profile says push is not set up and nothing is
 		// sent. The subject is the app's own https URL (no email anywhere).
 		"VAPID_PUBLIC_KEY": "BFL8--MPjPLK9o4Ap57Ia4atn2fl1NUwqEZmrau-MmuJh6hZ8kXQAMvo4FqBQUhdNqObHJpx-y-cX5rj8i6eNGw",
-		"VAPID_SUBJECT": "https://daily-checkin.hurshm05.workers.dev"
+		"VAPID_SUBJECT": "https://daily-checkin.gamecheckin.workers.dev"
 	},
 	"triggers": {
 		// One hourly run; scheduled() decides which jobs are due (empty for now).

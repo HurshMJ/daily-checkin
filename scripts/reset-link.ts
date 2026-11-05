@@ -15,7 +15,7 @@ import { hashToken, randomToken } from "../app/auth/crypto.ts";
 import { memberLookupSql, operatorResetLinkStatements } from "../app/auth/reset-link-sql.ts";
 import { normaliseText } from "../app/text-rules.ts";
 
-const PRODUCTION_URL = "https://daily-checkin.hurshm05.workers.dev";
+const PRODUCTION_URL = "https://daily-checkin.gamecheckin.workers.dev";
 const LOCAL_URL = "http://localhost:5173";
 const USAGE = "Usage: npm run operator:reset-link -- <username> [--local]";
 
