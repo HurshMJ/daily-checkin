@@ -20,9 +20,7 @@ CREATE TABLE group_checkins (
   PRIMARY KEY (group_id, member_id, game_night)
 );
 
--- Serves the members ON DELETE CASCADE and per-Member scans of
--- group_checkins. The Reminder filters on group_id, member_id and game_night,
--- which the primary key already covers.
+-- The Reminder looks up a Member's Check-ins for one night.
 CREATE INDEX group_checkins_member_night ON group_checkins (member_id, game_night);
 
 -- Copies each Check-in of a night the Reset has not frozen yet into every
