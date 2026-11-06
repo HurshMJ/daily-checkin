@@ -125,11 +125,25 @@ const MEMBER_GROUPS: GroupSource = "FROM memberships mine JOIN groups g ON g.id 
 /** The one Group `?1`: for a Check-in in it or a change to its threshold or Members. */
 const ONE_GROUP: GroupSource = "FROM groups g WHERE g.id = ?1";
 
+/**
+ * The one Yes rule: a Group's Yes answers on a Game Night are the Check-ins in
+ * it with Availability yes from its current Members. Returns the `FROM ...
+ * WHERE` clause over those rows, with memberships aliased `m` and
+ * group_checkins aliased `c`, for the SQL expressions `group` (the Group id)
+ * and `night` (the Game Night). By default it counts all of the Group's current
+ * Members; `memberFilter` narrows them further (History passes
+ * `m.joined_at < n.ends`). Every argument is a fixed SQL expression written in
+ * code, never request data.
+ */
+export function yesAnswersFrom(group: string, night: string, memberFilter?: string): string {
+  return `FROM memberships m
+     JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
+       AND c.game_night = ${night} AND c.availability = 'yes'
+     WHERE m.group_id = ${group}${memberFilter ? ` AND ${memberFilter}` : ""}`;
+}
+
 /** The Group `g`'s count of Yes answers in it from its current Members on the Game Night `?2`. */
-const YES_COUNT = `(SELECT COUNT(*) FROM memberships m
-            JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
-              AND c.game_night = ?2 AND c.availability = 'yes'
-            WHERE m.group_id = g.id)`;
+export const YES_COUNT = `(SELECT COUNT(*) ${yesAnswersFrom("g.id", "?2")})`;
 
 /**
  * The one Game On rule: marks each Group `g` that the `source` clause selects

@@ -185,7 +185,7 @@ describe("the Notifications card on the profile", () => {
     const { bob } = await setUp();
     const card = notificationsCard(mainOf(await (await bob.get("/profile")).text()));
     for (const [type, name, detail] of [
-      ["reminder", "Reminder", "At 5 PM if you have not answered for tonight."],
+      ["reminder", "Reminder", "At 5 PM if one of your Groups has no answer from you tonight."],
       ["daily_summary", "Daily Summary", "At 8 PM, each of your Groups&#x27; answers for tonight."],
     ]) {
       expect(card).toContain(`<span class="toggle-name" id="toggle-${type}-name">${name}</span>`);
