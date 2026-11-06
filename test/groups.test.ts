@@ -91,7 +91,7 @@ describe("Create a Group", () => {
   });
 
   it("shows the name field, the Owner line and Create Group with a way back", async () => {
-    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD });
+    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
     const response = await browser.get("/groups/new");
     const html = await response.text();
     const body = bodyOf(html);
@@ -108,7 +108,7 @@ describe("Create a Group", () => {
   });
 
   it.each([[""], ["x".repeat(41)]])("refuses %j with a field error and keeps the typed name", async (name) => {
-    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD });
+    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
     const response = await browser.post("/groups/new", { name });
     const body = bodyOf(await response.text());
 
@@ -123,7 +123,7 @@ describe("Create a Group", () => {
 
   it("creates a Group with the creator as Owner, a threshold of 3 and one membership", async () => {
     const app = startApp();
-    const browser = await app.createLogin({ username: "Alice", password: PASSWORD });
+    const browser = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
     const name = "x".repeat(40);
     const response = await browser.post("/groups/new", { name, owner_id: "999", threshold: "1" });
 
@@ -138,7 +138,7 @@ describe("Create a Group", () => {
   });
 
   it("accepts an emoji name and lets two Groups share a name", async () => {
-    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD });
+    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
     await browser.post("/groups/new", { name: " Game Night 🎲 " });
     await browser.post("/groups/new", { name: "Game Night 🎲" });
 
@@ -148,7 +148,7 @@ describe("Create a Group", () => {
   });
 
   it("refuses a POST without a same-origin Origin", async () => {
-    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD });
+    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
     const response = await browser.post("/groups/new", { name: "Sneaky" }, { origin: "https://evil.test" });
 
     expect(response.status).toBe(403);
@@ -156,7 +156,7 @@ describe("Create a Group", () => {
   });
 
   it("links the empty Tonight's Create a Group to the new Group screen", async () => {
-    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD });
+    const browser = await startApp().createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
     const body = bodyOf(await (await browser.get("/")).text());
 
     expect(body).toMatch(/<a[^>]*class="btn-primary"[^>]*href="\/groups\/new"[^>]*>Create a Group<\/a>|<a[^>]*href="\/groups\/new"[^>]*class="btn-primary"[^>]*>Create a Group<\/a>/);
@@ -181,7 +181,7 @@ describe("threshold rule", () => {
  */
 async function lifecycle() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
   for (const username of ["Bob", "Carol", "Dave"]) await app.createLogin({ username, password: PASSWORD });
   await alice.post("/groups/new", { name: "Friday" });
   const ids = {

@@ -35,8 +35,8 @@ async function mainOf(response: Response): Promise<string> {
  */
 async function setUp() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
-  const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
+  const bob = await app.createLogin({ username: "Bob", password: PASSWORD, canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   await bob.post("/groups/new", { name: "Solo" });
   const ids = { alice: await idOf("Alice"), bob: await idOf("Bob") };
@@ -197,7 +197,14 @@ describe("the delete batch", () => {
       },
     });
     const auth = createAuth({ env: { ...env, DB: racingDb }, clock: app.clock });
-    const member = { id: ids.bob, username: "Bob", displayName: "Bobby", colour: "sky" as const, passwordWasReset: false };
+    const member = {
+      id: ids.bob,
+      username: "Bob",
+      displayName: "Bobby",
+      colour: "sky" as const,
+      passwordWasReset: false,
+      canCreateGroups: false,
+    };
     expect(await auth.deleteLogin(member, PASSWORD, "198.51.100.7")).toEqual({
       ok: false,
       reason: "owns-groups",

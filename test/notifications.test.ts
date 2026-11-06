@@ -34,7 +34,7 @@ const endpointOf = (name: string) => pushEndpoint(name.toLowerCase());
 async function setUp(options: Parameters<typeof startApp>[0] = {}) {
   const app = startApp(options);
   const devices = {} as Record<Name, Awaited<ReturnType<typeof app.createLogin>>>;
-  for (const name of NAMES) devices[name] = await app.createLogin({ username: name, password: PASSWORD });
+  for (const name of NAMES) devices[name] = await app.createLogin({ username: name, password: PASSWORD, canCreateGroups: true });
   await devices.Alice.post("/groups/new", { name: "Friday" });
   const friday = await idOf("groups", "name", "Friday");
   for (const name of ["Bob", "Carol"] as const) await addMember(app, friday, name);
@@ -377,7 +377,7 @@ describe("a new Game Night", () => {
 describe("payloads", () => {
   it("stay within the limit with the longest names", async () => {
     const app = startApp();
-    const owner = await app.createLogin({ username: "Ł".repeat(32), password: PASSWORD });
+    const owner = await app.createLogin({ username: "Ł".repeat(32), password: PASSWORD, canCreateGroups: true });
     const other = await app.createLogin({ username: "Bob", password: PASSWORD });
     await owner.post("/groups/new", { name: "🎲".repeat(40) });
     await addMember(app, await idOf("groups", "name", "🎲".repeat(40)), "Bob");
@@ -419,7 +419,7 @@ describe("a night already on when migration 0007 is applied", () => {
     const app = startApp();
     const devices = {} as Record<Name, Awaited<ReturnType<typeof app.createLogin>>>;
     for (const name of ["Alice", "Bob", "Carol"] as const) {
-      devices[name] = await app.createLogin({ username: name, password: PASSWORD });
+      devices[name] = await app.createLogin({ username: name, password: PASSWORD, canCreateGroups: true });
     }
     await devices.Alice.post("/groups/new", { name: "Friday" });
     const friday = await idOf("groups", "name", "Friday");

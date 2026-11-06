@@ -27,6 +27,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `app/auth/` | Auth: passwords, sessions, Setup Links, Password Reset Links, username, Display Name and password rules, the Shown name, the avatar palette, the `Origin` check |
 | `app/game-night.ts` | `gameNightOf()`: the Game Night of an instant, the UTC+4 date of the most recent 06:00 UTC+4; `zoneDayTime()` shows a time in that zone |
 | `app/groups.ts`, `app/checkins.ts` | Groups (create, name rule, the Group page read) and Check-ins (Availability, Note, the Game On statement, tonight's Boards) |
+| `app/group-creators-sql.ts` | The statement that gives or takes away a Member's right to create Groups, shared by the Operator command and the tests |
 | `app/invites.ts` | Invites: the label rule, Owner-only make, list and cancel, and joining a Group with an Invite |
 | `app/push.ts` | Push subscriptions (the endpoint check at the trust boundary, save and delete) and notification toggles |
 | `app/notifications.ts` | Notification rules: the "someone said Yes" claim, recipients, payloads, delivery after the response, and the scheduled Reminder and Daily Summary |
@@ -38,6 +39,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `scripts/operator-setup.sh` | One-time Operator setup wizard |
 | `scripts/setup-link.ts` | Operator command that prints a Setup Link |
 | `scripts/reset-link.ts` | Operator command that prints a Password Reset Link |
+| `scripts/allow-groups.ts` | Operator command that gives or takes away a Member's right to create Groups |
 | `.github/workflows/deploy.yml` | Deploy pipeline |
 
 ## Local development
@@ -100,10 +102,10 @@ type and that the manifest colours equal `--bg` in `app/styles/tokens.css`;
 
 ## Operator commands
 
-Operator commands run on the Operator's machine with wrangler logged in. They
-make a random token locally, store only its SHA-256 in D1 with
-`wrangler d1 execute --remote`, and print a link. No password is ever passed on
-the command line.
+Operator commands run on the Operator's machine with wrangler logged in and
+change D1 with `wrangler d1 execute --remote`. The link commands make a random
+token locally, store only its SHA-256, and print a link. No password is ever
+passed on the command line.
 
 ### Setup Link
 
@@ -154,6 +156,31 @@ Links*).
 
 Treat the link like a password until it is used: anyone holding it can set
 that Member's password.
+
+### Right to create Groups
+
+```sh
+npm run operator:allow-groups -- <username>         # allow
+npm run operator:allow-groups -- <username> --off   # take the right away
+```
+
+Only a Member the Operator has allowed can create a Group. Every new login,
+from a Setup Link or an Invite, starts without the right; migration 0012 gave
+it to every Member who owned a Group when it ran. A Member without it sees no
+Create a Group button: the empty Tonight tells them to ask a Group's Owner for
+an Invite, `/groups/new` says creating a Group is not available, and a create
+posted anyway is refused with 403 and writes nothing.
+
+- The username is matched as login matches it: trimmed and in any casing.
+  Quote a username with spaces or an apostrophe for the shell.
+- An unknown username prints `No login named <username>.` to standard error,
+  exits 1 and changes nothing.
+- On success it prints one line naming the login and its new state, such as
+  `Alice can now create Groups.`
+- `--local` targets the local D1.
+- The command exits non-zero when wrangler fails.
+- Being handed a Group (Make Owner) does not give the right. Taking the right
+  away leaves the Member's Groups as they are; it only stops new ones.
 
 ### Login limits
 
@@ -435,7 +462,9 @@ GitHub Secrets hold exactly four values:
 
 The last step logs in as a dedicated smoke-test login that belongs to no Group:
 it posts the credentials to `/login`, opens Tonight with the new session and
-expects the empty state with "Create a Group", then logs out. The password
+expects the empty Tonight (it greps for "not in a Group yet", which both
+empty Tonight views show; the smoke login has no right to create Groups), then
+logs out. The password
 reaches `curl` on standard input and is never printed. The login request is
 tried up to 3 times, 5 seconds apart, while it gets no response or a 5xx,
 because the new version can take a few seconds to reach every edge location;

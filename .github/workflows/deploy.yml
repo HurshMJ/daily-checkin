@@ -122,7 +122,11 @@ jobs:
 
           status=$(curl --silent --show-error --max-time 30 --output "$body" --write-out '%{http_code}' \
             --header "Cookie: $cookie" "$APP_URL/")
-          if [ "$status" != "200" ] || ! grep -q "Create a Group" "$body"; then
+          # The empty Tonight's heading, shown whether or not the smoke login
+          # may create Groups (it may not). React writes its apostrophe as
+          # &#x27;, so the marker leaves it out. test/group-creators.test.ts
+          # pins it against both views.
+          if [ "$status" != "200" ] || ! grep -q "not in a Group yet" "$body"; then
             echo "::error::Smoke login failed: GET / with the session answered $status without the empty Tonight."
             exit 1
           fi

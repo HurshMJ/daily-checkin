@@ -6,7 +6,9 @@ import {
 import { env } from "cloudflare:workers";
 
 import { hashToken, randomToken } from "~/auth/crypto";
+import { usernameKey } from "~/auth/rules";
 import { setupLinkStatements } from "~/auth/setup-link-sql";
+import { allowGroupsSql } from "~/group-creators-sql";
 import type { Clock, PushSender, PushSubscription } from "~/services";
 import { encodeBase64Url } from "~/web-push";
 
@@ -176,12 +178,28 @@ export function startApp(
       return token;
     },
 
-    /** Creates a login through a new Setup Link and returns the logged-in device. */
-    async createLogin(login: { username: string; password: string; colour?: string }) {
+    /**
+     * Does what `npm run operator:allow-groups` does, through the same SQL:
+     * gives the login the right to create Groups, or takes it away.
+     */
+    async allowGroups(username: string, allowed = true): Promise<void> {
+      const { results } = await env.DB.prepare(allowGroupsSql(usernameKey(username), allowed)).all();
+      if (results.length !== 1) throw new Error(`allowGroups found no login named ${username}`);
+    },
+
+    /**
+     * Creates a login through a new Setup Link and returns the logged-in
+     * device. `canCreateGroups` has the Operator allow it to create Groups.
+     */
+    async createLogin({
+      canCreateGroups = false,
+      ...login
+    }: { username: string; password: string; colour?: string; canCreateGroups?: boolean }) {
       const token = await this.issueSetupLink(`login ${login.username.replace(/[^A-Za-z0-9]/g, "")}`.slice(0, 40));
       const browser = await deviceWithLink(`/setup/${token}`);
       const response = await browser.post("/setup", { colour: "blue", ...login });
       if (response.status !== 302) throw new Error(`createLogin failed with ${response.status}`);
+      if (canCreateGroups) await this.allowGroups(login.username);
       return browser;
     },
 

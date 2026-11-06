@@ -39,7 +39,7 @@ describe("Worker boundary", () => {
 
   it("runs the scheduled handler with the injected push sender", async () => {
     const app = startApp({ now: "2026-11-03T12:00:00Z" });
-    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery" });
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", canCreateGroups: true });
     await alice.post("/groups/new", { name: "Friday" });
     await alice.subscribe("https://fcm.googleapis.com/fcm/send/alice");
 

@@ -8,12 +8,19 @@ import { FieldError } from "~/components/field-error";
 import { Notice } from "~/components/notice";
 import { SubmitButton, useSubmitting } from "~/components/submit-button";
 import { TopBar } from "~/components/top-bar";
-import { parseGroupId } from "~/groups";
+import { ASK_FOR_INVITE_MESSAGE, parseGroupId } from "~/groups";
 import { appContext } from "~/services";
 
 import type { Route } from "./+types/home";
 
 export const PASSWORD_RESET_NOTICE = "If you did not ask for this, tell your Group's Owner.";
+
+/**
+ * The empty Tonight's heading, shown with or without the right to create
+ * Groups. The deploy smoke check greps for its "not in a Group yet" after
+ * logging in; test/group-creators.test.ts pins that.
+ */
+export const NO_GROUP_HEADING = "You're not in a Group yet";
 
 export const SAVE_FAILED_MESSAGE = "Your answer did not save. The Board still shows your last saved answer.";
 
@@ -28,7 +35,13 @@ export async function loader({ context }: Route.LoaderArgs) {
     // Shown once: the first Tonight after a Password Reset Link set the password.
     member.passwordWasReset ? authFor(context).takePasswordResetNotice(member.id) : false,
   ]);
-  return { colour: member.colour, memberId: member.id, passwordWasReset, ...tonight };
+  return {
+    colour: member.colour,
+    memberId: member.id,
+    canCreateGroups: member.canCreateGroups,
+    passwordWasReset,
+    ...tonight,
+  };
 }
 
 const notFound = () => data("Not found", { status: 404 });
@@ -85,7 +98,9 @@ export async function action({ request, context }: Route.ActionArgs) {
 
 /**
  * Tonight: every Board the Member is on, each with the Member's own answer
- * and Note for that Group. A Member in no Group sees the empty state.
+ * and Note for that Group. A Member in no Group sees the empty state: with
+ * the right to create Groups it offers Create a Group, without it it says to
+ * ask a Group's Owner for an Invite.
  */
 export default function Tonight({ loaderData, actionData }: Route.ComponentProps) {
   const navigation = useNavigation();
@@ -100,11 +115,17 @@ export default function Tonight({ loaderData, actionData }: Route.ComponentProps
           <PasswordResetNotice shown={loaderData.passwordWasReset} />
           <div className="card empty-state">
             <span className="empty-ring" aria-hidden="true" />
-            <h2>You're not in a Group yet</h2>
-            <p className="empty-hint">Create one and invite your friends, or open an Invite link a friend sent you.</p>
-            <Link className="btn-primary" to="/groups/new">
-              Create a Group
-            </Link>
+            <h2>{NO_GROUP_HEADING}</h2>
+            {loaderData.canCreateGroups ? (
+              <>
+                <p className="empty-hint">Create one and invite your friends, or open an Invite link a friend sent you.</p>
+                <Link className="btn-primary" to="/groups/new">
+                  Create a Group
+                </Link>
+              </>
+            ) : (
+              <p className="empty-hint">{ASK_FOR_INVITE_MESSAGE}</p>
+            )}
           </div>
         </main>
       </>

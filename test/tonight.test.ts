@@ -70,7 +70,7 @@ function boardSection(body: string, name: string): string {
 
 /** Alice with one Group, "Friday", and a logged-in browser. */
 async function aliceWithGroup(app = startApp()) {
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, colour: "violet" });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, colour: "violet", canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   return { app, alice, friday: await groupId("Friday") };
 }
@@ -202,7 +202,7 @@ describe("Tonight with a Group", () => {
 
   it("refuses a missing or malformed groupId with 400 and a Group the Member is not in with 404", async () => {
     const { app, alice, friday } = await aliceWithGroup();
-    const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
+    const bob = await app.createLogin({ username: "Bob", password: PASSWORD, canCreateGroups: true });
     await bob.post("/groups/new", { name: "Bob's" });
     const bobs = await groupId("Bob's");
 
@@ -271,7 +271,7 @@ describe("Tonight with a Group", () => {
 
   it("moves the pill from Needs to Game On to Game Off, and leaves an unrelated Group alone", async () => {
     const { app, alice, friday } = await aliceWithGroup();
-    const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
+    const bob = await app.createLogin({ username: "Bob", password: PASSWORD, canCreateGroups: true });
     const cat = await app.createLogin({ username: "Cat", password: PASSWORD });
     await join(friday, "Bob");
     await join(friday, "Cat");

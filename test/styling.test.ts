@@ -135,11 +135,30 @@ describe("styled Setup Link page", () => {
 });
 
 describe("styled Tonight and profile", () => {
-  async function newMember() {
+  async function newMember(canCreateGroups = true) {
     const app = startApp();
-    const browser = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    const browser = await app.createLogin({
+      username: "Alice",
+      password: "correct horse battery",
+      colour: "pink",
+      canCreateGroups,
+    });
     return browser;
   }
+
+  it("shows a Member who cannot create Groups an empty Tonight that says to ask an Owner for an Invite", async () => {
+    const browser = await newMember(false);
+    const html = await (await browser.get("/")).text();
+    const body = bodyOf(html);
+
+    expect(html).not.toMatch(/\sstyle=/);
+    expect(body).toContain("You&#x27;re not in a Group yet");
+    expect(body).toContain(
+      "<p class=\"empty-hint\">Ask a Group&#x27;s Owner for an Invite, then open the Invite link they send you.</p>",
+    );
+    expect(body).not.toContain("Create one and invite your friends");
+    expect(linksTo(body, "/groups/new")).toEqual([]);
+  });
 
   it("shows the empty Tonight with the You pill in the Member's colour", async () => {
     const browser = await newMember();
@@ -265,7 +284,7 @@ describe("Check-in live region", () => {
 describe("styled Group page", () => {
   async function ownerPage() {
     const app = startApp();
-    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink", canCreateGroups: true });
     await alice.post("/groups/new", { name: "Friday" });
     const group = await env.DB.prepare("SELECT id FROM groups").first<{ id: number }>();
     const html = await (await alice.post(`/groups/${group!.id}`, { intent: "make", label: "for Sam" })).text();
@@ -302,7 +321,7 @@ describe("styled Group page", () => {
 describe("styled Group settings and the profile Groups card", () => {
   it("draws the stepper, Manage and the tile action from tokens only, with no inline styles", async () => {
     const app = startApp();
-    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink", canCreateGroups: true });
     await alice.post("/groups/new", { name: "Friday" });
     const group = await env.DB.prepare("SELECT id FROM groups").first<{ id: number }>();
     const page = bodyOf(await (await alice.get(`/groups/${group!.id}`)).text());
@@ -377,7 +396,7 @@ describe("styled History", () => {
 
   it("uses no modifier classes on the History page", async () => {
     const app = startApp();
-    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink" });
+    const alice = await app.createLogin({ username: "Alice", password: "correct horse battery", colour: "pink", canCreateGroups: true });
     await alice.post("/groups/new", { name: "Friday" });
     const group = await env.DB.prepare("SELECT id FROM groups").first<{ id: number }>();
     app.clock.set("2026-11-04T02:00:00Z");
