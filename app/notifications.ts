@@ -1,5 +1,5 @@
 import { type MemberNames, shownName } from "~/auth/rules";
-import { type Availability, AVAILABILITY_LABELS, sortRows, yesAnswersFrom } from "~/checkins";
+import { type Availability, AVAILABILITY_LABELS, sortRows, YES_COUNT, yesAnswersFrom } from "~/checkins";
 import { gameNightOf, zoneHour } from "~/game-night";
 import type { EventType, NotificationType } from "~/push";
 import { type Clock, PushNotConfiguredError, type PushSender, type PushSubscription } from "~/services";
@@ -340,7 +340,7 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
       db.prepare("SELECT username, display_name AS displayName FROM members WHERE id = ?1").bind(actorId),
       db
         .prepare(
-          `SELECT g.name, g.threshold, (SELECT COUNT(*) ${yesAnswersFrom("g.id", "?2")}) AS yes
+          `SELECT g.name, g.threshold, ${YES_COUNT} AS yes
            FROM groups g WHERE g.id = ?1`,
         )
         .bind(groupId, night),
