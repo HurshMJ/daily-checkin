@@ -92,13 +92,24 @@ describe("opening a link moves its token into a cookie", () => {
       `/Reset/${token}`,
       `/%69nvite/${token}`,
       `/invite/${token}/`,
+      // Repeated trailing slashes and the single-fetch data suffixes.
+      `/reset/${token}//`,
+      `/reset/${token}/.data`,
+      `/reset/${token}/_.data`,
+      `/reset/${token}.data`,
+      `/Invite/${token}.data`,
+      `/invite/${token}///_.data`,
+      `/setup/${token}.data`,
+      `/SETUP/${token}/_.data`,
     ];
     for (const path of paths) {
       const ctx = createExecutionContext();
       const request = new Request(new URL(path, APP_ORIGIN), { headers: { Cookie: `__Host-session=${randomToken()}` } });
       const response = await worker.fetch(request as Request<unknown, IncomingRequestCfProperties>, { ...env, DB: throwingDb }, ctx);
       await waitOnExecutionContext(ctx);
-      expect(response.status, path).toBe(303);
+      // A single-fetch data request gets its redirect as a 202 data response.
+      expect(response.status, path).toBe(path.endsWith(".data") ? 202 : 303);
+      expect(response.headers.getSetCookie().some((c) => c.startsWith("__Host-session=")), path).toBe(false);
     }
     expect(log).not.toHaveBeenCalled();
     expect(error).not.toHaveBeenCalled();
@@ -112,10 +123,53 @@ describe("the session skip covers only the link routes", () => {
 
   it("matches the link routes as the router does and nothing else", () => {
     const token = randomToken();
-    for (const path of [`/invite/${token}`, `/Invite/${token}`, `/SETUP/${token}`, `/RESET/${token}`, `/%69nvite/${token}`, `/invite/${token}/`, "/invite/a%2Fb"]) {
+    const matched = [
+      `/invite/${token}`,
+      `/Invite/${token}`,
+      `/SETUP/${token}`,
+      `/RESET/${token}`,
+      `/%69nvite/${token}`,
+      `/invite/${token}/`,
+      "/invite/a%2Fb",
+      // Any number of trailing slashes, and the single-fetch suffixes the router strips.
+      `/reset/${token}//`,
+      `/reset/${token}///`,
+      `/reset/${token}/.data`,
+      `/reset/${token}/_.data`,
+      `/reset/${token}.data`,
+      `/Invite/${token}.data`,
+      `/invite/${token}//_.data`,
+      `/setup/${token}.data`,
+      `/setup/${token}/_.data`,
+    ];
+    for (const path of matched) {
       expect(isLinkPath(path), path).toBe(true);
     }
-    for (const path of ["/invites", "/invite", "/invite/", "/reset", "/resets/a", "/profile", "/invite/a/b", "/invitex/a", "/x/invite/a", "/%E0%A4%A/x", "/invite/%E0%A4%A"]) {
+    const unmatched = [
+      "/invites",
+      "/invite",
+      "/invite/",
+      "/reset",
+      "/resets/a",
+      "/profile",
+      "/profile.data",
+      "/invite/a/b",
+      "/invitex/a",
+      "/resetx/a",
+      `/resetx/${token}`,
+      "/x/invite/a",
+      "/%E0%A4%A/x",
+      "/invite/%E0%A4%A",
+      // A suffix alone is no token: the router sends these to the page routes.
+      "/reset/.data",
+      "/reset/_.data",
+      "/invite//_.data",
+      "/reset/a/b.data",
+      "/reset/a/b/_.data",
+      "/invite.data",
+      "/_root.data",
+    ];
+    for (const path of unmatched) {
       expect(isLinkPath(path), path).toBe(false);
     }
   });

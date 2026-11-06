@@ -1,11 +1,12 @@
 import { data } from "react-router";
 
 import { requireMember } from "~/auth/request";
+import { GAME_STATE_LABELS } from "~/checkins";
 import { BoardRows } from "~/components/board";
 import { TopBar } from "~/components/top-bar";
 import { isGameNight, nightLabel } from "~/game-night";
 import { parseGroupId } from "~/groups";
-import { createHistory, FINAL_STATE_LABELS, yesLine } from "~/history";
+import { createHistory, yesLine } from "~/history";
 import { appContext } from "~/services";
 
 import type { Route } from "./+types/groups.$groupId.history.$night";
@@ -51,7 +52,7 @@ export default function PastNightPage({ loaderData }: Route.ComponentProps) {
         </header>
         <section className="card board" aria-labelledby="night-heading">
           <div className="board-banner" data-state={night.state}>
-            <p className="board-pill">{FINAL_STATE_LABELS[night.state]}</p>
+            <p className="board-pill">{GAME_STATE_LABELS[night.state]}</p>
             <p className="board-count">{yesLine(night)}</p>
           </div>
           <BoardRows rows={night.rows} viewerId={loaderData.viewerId} noAnswer={NO_ANSWER_PAST} />

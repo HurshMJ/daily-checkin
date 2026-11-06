@@ -38,6 +38,18 @@ export function linkCookie(name: LinkCookie, token: string): string {
   return cookie(name, token, LINK_COOKIE_MAX_AGE_S);
 }
 
+/** A flash cookie lasts a minute: long enough to reach the page a redirect names. */
+export const FLASH_COOKIE_MAX_AGE_S = 60;
+
+/**
+ * A short-lived cookie that carries a value across one redirect, for the page
+ * it lands on to read and clear. Path=/ because a single-fetch request goes to
+ * `<page>.data`, which a Path=<page> cookie would not reach.
+ */
+export function flashCookie(name: string, value: string): string {
+  return cookie(name, value, FLASH_COOKIE_MAX_AGE_S);
+}
+
 /** A Set-Cookie value that removes the named cookie. */
 export function clearedCookie(name: string): string {
   return cookie(name, "", 0);
@@ -65,21 +77,35 @@ export function readCookie(request: Request, name: string): string | null {
 const LINK_ROUTE_PREFIXES = ["invite", "setup", "reset"] as const;
 
 /**
- * The redirect-only link routes' paths, matched case-insensitively like the
- * router matches them.
+ * The redirect-only link routes' paths, matched case-insensitively and with
+ * any number of trailing slashes, like the router matches them
+ * (`compilePath` in node_modules/react-router/dist/development/lib/router/utils.js
+ * ends every route pattern with `\/*$` and adds the `i` flag).
  */
-const LINK_PATH = new RegExp(`^/(${LINK_ROUTE_PREFIXES.join("|")})/[^/]+/?$`, "i");
+const LINK_PATH = new RegExp(`^/(${LINK_ROUTE_PREFIXES.join("|")})/[^/]+/*$`, "i");
+
+/**
+ * The pathname the router matches for a single-fetch data request: a
+ * trailing `/_.data` loses its `_.data`, otherwise a trailing `.data` is
+ * removed, so `/reset/<token>.data` and `/reset/<token>/_.data` reach the
+ * link route (`getNormalizedPath` in
+ * node_modules/react-router/dist/development/lib/server-runtime/urls.js).
+ */
+function withoutDataSuffix(pathname: string): string {
+  return pathname.endsWith("/_.data") ? pathname.replace(/_\.data$/, "") : pathname.replace(/\.data$/, "");
+}
 
 /**
  * True when the router sends this pathname to a redirect-only link route. The
- * path is decoded segment by segment with `%2F` kept, as the router decodes
- * it before matching, so `/%69nvite/<token>` counts. A malformed escape counts
- * as no match: the lookup that follows is the safe side.
+ * single-fetch suffix is removed first, then the path is decoded segment by
+ * segment with `%2F` kept, as the router decodes it before matching, so
+ * `/%69nvite/<token>` counts. A malformed escape counts as no match: the
+ * lookup that follows is the safe side.
  */
 export function isLinkPath(pathname: string): boolean {
   let decoded: string;
   try {
-    decoded = pathname
+    decoded = withoutDataSuffix(pathname)
       .split("/")
       .map((segment) => decodeURIComponent(segment).replace(/\//g, "%2F"))
       .join("/");

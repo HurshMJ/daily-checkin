@@ -84,6 +84,13 @@ the SVG, regenerate them from the repository root:
 node --input-type=module -e 'import sharp from "sharp"; for (const [n, f] of [[192, "icon-192.png"], [512, "icon-512.png"], [180, "apple-touch-icon.png"]]) await sharp("public/favicon.svg", { density: 72 * n / 512 * 4 }).resize(n, n).flatten({ background: "#1a1220" }).removeAlpha().png().toFile("public/" + f);'
 ```
 
+`public/favicon.ico` holds 16 and 32 pixel PNGs of the same art for browsers
+that ask for `/favicon.ico` on their own. Regenerate it the same way:
+
+```sh
+node --input-type=module -e 'import sharp from "sharp"; import { writeFileSync } from "node:fs"; const sizes = [16, 32]; const pngs = await Promise.all(sizes.map((n) => sharp("public/favicon.svg", { density: 72 * n / 512 * 4 }).resize(n, n).flatten({ background: "#1a1220" }).removeAlpha().png().toBuffer())); const dir = Buffer.alloc(6 + 16 * sizes.length); dir.writeUInt16LE(1, 2); dir.writeUInt16LE(sizes.length, 4); let offset = dir.length; sizes.forEach((n, i) => { const e = 6 + 16 * i; dir.writeUInt8(n, e); dir.writeUInt8(n, e + 1); dir.writeUInt16LE(1, e + 4); dir.writeUInt16LE(24, e + 6); dir.writeUInt32LE(pngs[i].length, e + 8); dir.writeUInt32LE(offset, e + 12); offset += pngs[i].length; }); writeFileSync("public/favicon.ico", Buffer.concat([dir, ...pngs]));'
+```
+
 `sharp` is not a project dependency; today it is installed as a dependency of
 wrangler's miniflare. If `npm ls sharp` finds nothing, run
 `npm install --no-save sharp` first. The PNGs must stay opaque RGB with no
