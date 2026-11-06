@@ -3,7 +3,7 @@ import { data, Form, Link, redirect, useNavigation } from "react-router";
 import { hashToken } from "~/auth/crypto";
 import { clientIp } from "~/auth/login-limits";
 import { authFor, clearedSessionCookie, currentSession, requireMember } from "~/auth/request";
-import { type ProfileNamesErrors, shownName, validateProfileNames } from "~/auth/rules";
+import { PASSWORD_LENGTH_HINT, type ProfileNamesErrors, shownName, validateProfileNames } from "~/auth/rules";
 import { AvatarDot } from "~/components/avatar-dot";
 import { FieldError } from "~/components/field-error";
 import { ColourPicker } from "~/components/login-fields";
@@ -249,7 +249,7 @@ export default function Profile({ loaderData, actionData }: Route.ComponentProps
               {errors.newPassword ? (
                 <FieldError id="new-password-help">{errors.newPassword}</FieldError>
               ) : (
-                <p id="new-password-help" className="field-hint">Use 12 to 128 characters.</p>
+                <p id="new-password-help" className="field-hint">{PASSWORD_LENGTH_HINT}</p>
               )}
             </div>
             <SubmitButton

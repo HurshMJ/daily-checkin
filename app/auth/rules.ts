@@ -38,8 +38,17 @@ export function normalisePassword(raw: string): string {
   return raw.normalize("NFC");
 }
 
+/** The shortest password accepted, in code points of the NFC form. */
+export const MIN_PASSWORD_LENGTH = 12;
+
 /** The longest password accepted, in code points of the NFC form. */
 export const MAX_PASSWORD_LENGTH = 128;
+
+/** The accepted password lengths, as the field hints word them. */
+export const PASSWORD_LENGTH_RANGE = `${MIN_PASSWORD_LENGTH} to ${MAX_PASSWORD_LENGTH} characters`;
+
+/** The password length rule as one sentence: the field hint and the length error. */
+export const PASSWORD_LENGTH_HINT = `Use ${PASSWORD_LENGTH_RANGE}.`;
 
 /** True when a normalised password is longer than any login can have. */
 export function passwordTooLong(password: string): boolean {
@@ -105,7 +114,7 @@ export const USERNAME_IS_PASSWORD_MESSAGE = "Choose a username that is not your 
  */
 export function passwordError(password: string, username: string): string | null {
   const length = codePoints(password);
-  if (length < 12 || length > MAX_PASSWORD_LENGTH) return "Use 12 to 128 characters.";
+  if (length < MIN_PASSWORD_LENGTH || length > MAX_PASSWORD_LENGTH) return PASSWORD_LENGTH_HINT;
   if (password.toLowerCase() === username.toLowerCase()) {
     return "Choose a password that is not your username.";
   }

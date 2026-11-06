@@ -1,5 +1,5 @@
 import { AVATAR_COLOUR_NAMES, AVATAR_COLOURS } from "~/auth/palette";
-import type { NewLoginErrors } from "~/auth/rules";
+import { type NewLoginErrors, PASSWORD_LENGTH_RANGE } from "~/auth/rules";
 
 import { AvatarDot } from "./avatar-dot";
 import { FieldError } from "./field-error";
@@ -56,7 +56,7 @@ export function NewLoginFields({
           <FieldError id="password-help">{errors.password}</FieldError>
         ) : (
           <p id="password-help" className="field-hint">
-            12 to 128 characters. A phrase with spaces works well.
+            {`${PASSWORD_LENGTH_RANGE}. A phrase with spaces works well.`}
           </p>
         )}
       </div>

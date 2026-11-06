@@ -2,6 +2,7 @@ import { data, Form, redirect } from "react-router";
 
 import { clearedCookie, readCookie, RESET_COOKIE, setCookies } from "~/auth/request";
 import { createResetLinks } from "~/auth/reset-links";
+import { PASSWORD_LENGTH_HINT } from "~/auth/rules";
 import { FieldError } from "~/components/field-error";
 import { Notice } from "~/components/notice";
 import { OfflineBar } from "~/components/offline-bar";
@@ -110,7 +111,7 @@ export default function SetNewPassword({ loaderData, actionData }: Route.Compone
             {errors.newPassword ? (
               <FieldError id="new-password-help">{errors.newPassword}</FieldError>
             ) : (
-              <p id="new-password-help" className="field-hint">Use 12 to 128 characters.</p>
+              <p id="new-password-help" className="field-hint">{PASSWORD_LENGTH_HINT}</p>
             )}
           </div>
           <div className="field">
