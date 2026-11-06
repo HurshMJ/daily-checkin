@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import manifestJson from "../public/manifest.webmanifest?raw";
 import appleTouchIcon from "../public/apple-touch-icon.png?inline";
+import faviconIco from "../public/favicon.ico?inline";
 import icon192 from "../public/icon-192.png?inline";
 import icon512 from "../public/icon-512.png?inline";
 
@@ -62,6 +63,27 @@ describe("icon files", () => {
     expect(header.height).toBe(size);
     // Colour type 2 is RGB with no alpha channel.
     expect(header.colourType).toBe(2);
+  });
+
+  it("/favicon.ico is a small ICO of 16 and 32 pixel PNGs, served as a static asset", () => {
+    // Browsers ask for /favicon.ico on their own; as a static asset it never reaches the Worker.
+    const bytes = Uint8Array.from(atob(faviconIco.split(",")[1]), (char) => char.charCodeAt(0));
+    const view = new DataView(bytes.buffer);
+    expect(bytes.length).toBeLessThan(10 * 1024);
+    // ICONDIR: reserved 0, type 1 (icon), image count.
+    expect([...bytes.slice(0, 4)]).toEqual([0, 0, 1, 0]);
+    expect(view.getUint16(4, true)).toBe(2);
+    const sizes = [0, 1].map((i) => {
+      const entry = 6 + 16 * i;
+      const offset = view.getUint32(entry + 12, true);
+      expect([...bytes.slice(offset, offset + 8)]).toEqual([137, 80, 78, 71, 13, 10, 26, 10]);
+      expect(offset + view.getUint32(entry + 8, true)).toBeLessThanOrEqual(bytes.length);
+      return [bytes[entry], bytes[entry + 1]];
+    });
+    expect(sizes).toEqual([
+      [16, 16],
+      [32, 32],
+    ]);
   });
 
   it("covers every icon the manifest declares at its declared size", () => {
