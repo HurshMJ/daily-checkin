@@ -1,6 +1,6 @@
 import type { AvatarColour } from "~/auth/palette";
 import { type MemberNames, shownName } from "~/auth/rules";
-import { type BoardRow, compareShownNames, sortRows } from "~/checkins";
+import { type BoardRow, compareShownNames, sortRows, yesAnswersFrom } from "~/checkins";
 import { addNights, gameNightOf, nightEnd } from "~/game-night";
 import type { Clock } from "~/services";
 
@@ -193,10 +193,7 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
             `INSERT INTO history_nights (group_id, game_night, threshold, final_state)
              SELECT g.id, n.night, g.threshold,
                CASE
-                 WHEN (SELECT COUNT(*) FROM memberships m
-                       JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
-                         AND c.game_night = n.night AND c.availability = 'yes'
-                       WHERE m.group_id = g.id AND m.joined_at < n.ends) >= g.threshold THEN 'on'
+                 WHEN (SELECT COUNT(*) ${yesAnswersFrom("g.id", "n.night", "m.joined_at < n.ends")}) >= g.threshold THEN 'on'
                  WHEN EXISTS (SELECT 1 FROM group_night_state s
                               WHERE s.group_id = g.id AND s.game_night = n.night AND s.was_on = 1) THEN 'off'
                  ELSE 'never'

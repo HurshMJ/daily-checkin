@@ -2,7 +2,7 @@ import { applyD1Migrations, reset } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
-import { createCheckins } from "~/checkins";
+import { createCheckins, yesAnswersFrom } from "~/checkins";
 
 import { fixedClock } from "./harness";
 
@@ -248,5 +248,35 @@ describe("Check-ins per Group", () => {
     expect((await board(alice, sunday)).pill.text).toBe("Needs 1 more Yes");
     const { results } = await env.DB.prepare("SELECT group_id, was_on FROM group_night_state").all();
     expect(results).toEqual([{ group_id: friday, was_on: 1 }]);
+  });
+});
+
+describe("yesAnswersFrom", () => {
+  it("counts Yes answers from the Group's current Members only, and honours the extra condition", async () => {
+    const alice = await seedMember("Alice");
+    const bob = await seedMember("Bob");
+    const carol = await seedMember("Carol");
+    const dave = await seedMember("Dave");
+    const friday = await seedGroup("Friday", alice, [alice, bob, carol, dave]);
+    const sunday = await seedGroup("Sunday", alice, [alice]);
+    const checkins = createCheckins({ env, clock: fixedClock(NOON) });
+    await checkins.setAvailability(alice, friday, "yes");
+    await checkins.setAvailability(bob, friday, "yes");
+    await checkins.setAvailability(carol, friday, "maybe");
+    await checkins.setAvailability(dave, friday, "yes");
+    await checkins.setAvailability(alice, sunday, "yes");
+    // Bob's Yes stays stored after he is removed, but no longer counts.
+    await env.DB.prepare("DELETE FROM memberships WHERE group_id = ?1 AND member_id = ?2").bind(friday, bob).run();
+
+    const count = (extra?: string) =>
+      env.DB.prepare(`SELECT COUNT(*) AS yes ${yesAnswersFrom("?1", "?2", extra)}`)
+        .bind(friday, "2026-11-03")
+        .first<{ yes: number }>();
+    expect(await count()).toEqual({ yes: 2 });
+    expect(await count(`m.member_id <> ${dave}`)).toEqual({ yes: 1 });
+    const other = await env.DB.prepare(`SELECT COUNT(*) AS yes ${yesAnswersFrom("?1", "?2")}`)
+      .bind(friday, "2026-11-04")
+      .first<{ yes: number }>();
+    expect(other).toEqual({ yes: 0 });
   });
 });

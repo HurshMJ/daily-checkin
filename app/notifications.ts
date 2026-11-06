@@ -1,5 +1,5 @@
 import { type MemberNames, shownName } from "~/auth/rules";
-import { type Availability, AVAILABILITY_LABELS, sortRows } from "~/checkins";
+import { type Availability, AVAILABILITY_LABELS, sortRows, yesAnswersFrom } from "~/checkins";
 import { gameNightOf, zoneHour } from "~/game-night";
 import type { EventType, NotificationType } from "~/push";
 import { type Clock, PushNotConfiguredError, type PushSender, type PushSubscription } from "~/services";
@@ -263,14 +263,7 @@ const RECIPIENTS: Record<EventType, (groupId: number, night: string) => [sql: st
   // Every Member of the Group.
   game_on: (groupId) => ["SELECT member_id FROM memberships WHERE group_id = ?4", groupId],
   // The Group's Members whose Check-in in it is Yes now.
-  game_off: (groupId, night) => [
-    `SELECT m.member_id FROM memberships m
-     JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
-       AND c.game_night = ?5 AND c.availability = 'yes'
-     WHERE m.group_id = ?4`,
-    groupId,
-    night,
-  ],
+  game_off: (groupId, night) => [`SELECT m.member_id ${yesAnswersFrom("?4", "?5")}`, groupId, night],
 };
 
 /**
@@ -347,11 +340,7 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
       db.prepare("SELECT username, display_name AS displayName FROM members WHERE id = ?1").bind(actorId),
       db
         .prepare(
-          `SELECT g.name, g.threshold,
-                  (SELECT COUNT(*) FROM memberships m
-                   JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
-                     AND c.game_night = ?2 AND c.availability = 'yes'
-                   WHERE m.group_id = g.id) AS yes
+          `SELECT g.name, g.threshold, (SELECT COUNT(*) ${yesAnswersFrom("g.id", "?2")}) AS yes
            FROM groups g WHERE g.id = ?1`,
         )
         .bind(groupId, night),
