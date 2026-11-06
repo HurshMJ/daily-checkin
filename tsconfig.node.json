@@ -9,6 +9,7 @@
     "app/auth/setup-link-sql.ts",
     "app/auth/reset-link-sql.ts",
     "app/group-creators-sql.ts",
+    "app/sql-text.ts",
     "app/text-rules.ts"
   ],
   "compilerOptions": {

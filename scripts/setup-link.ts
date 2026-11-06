@@ -7,19 +7,13 @@
 // cancels that label's older unused link. Runs on Node's built-in type
 // stripping, so it imports the shared token and SQL modules by their .ts paths.
 
-import { spawnSync } from "node:child_process";
-
 import { hashToken, randomToken } from "../app/auth/crypto.ts";
 import { setupLinkLabelError, setupLinkStatements } from "../app/auth/setup-link-sql.ts";
+import { execute, fail } from "./d1.ts";
 
 const PRODUCTION_URL = "https://daily-checkin.gamecheckin.workers.dev";
 const LOCAL_URL = "http://localhost:5173";
 const USAGE = "Usage: npm run operator:setup-link -- <label> [--local]";
-
-function fail(message: string): never {
-  console.error(message);
-  process.exit(1);
-}
 
 const args = process.argv.slice(2);
 const local = args.includes("--local");
@@ -35,12 +29,6 @@ const tokenHash = await hashToken(token);
 const sql = setupLinkStatements({ label, tokenHash, now: new Date() }).join(" ");
 
 // wrangler's own output goes to stderr, so stdout carries only the link.
-const result = spawnSync(
-  "npx",
-  ["wrangler", "d1", "execute", "DB", local ? "--local" : "--remote", "--yes", "--command", sql],
-  { stdio: ["ignore", process.stderr, process.stderr] },
-);
-if (result.error) fail(`Could not run wrangler: ${result.error.message}`);
-if (result.status !== 0) fail(`wrangler d1 execute failed (exit ${result.status}); no link was issued.`);
+execute(sql, { local, json: false, failure: "no link was issued." });
 
 console.log(`${local ? LOCAL_URL : PRODUCTION_URL}/setup/${token}`);

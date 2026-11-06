@@ -8,7 +8,7 @@
  * another module of the same kind, by its .ts path.
  */
 
-import { sqlText } from "./auth/reset-link-sql.ts";
+import { sqlText } from "./sql-text.ts";
 
 /**
  * The one statement that gives the Member with this username key the right

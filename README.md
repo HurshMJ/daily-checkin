@@ -40,6 +40,7 @@ is in [`GLOSSARY.md`](GLOSSARY.md).
 | `scripts/setup-link.ts` | Operator command that prints a Setup Link |
 | `scripts/reset-link.ts` | Operator command that prints a Password Reset Link |
 | `scripts/allow-groups.ts` | Operator command that gives or takes away a Member's right to create Groups |
+| `scripts/d1.ts` | What the Operator commands share: the error exit and the `wrangler d1 execute` runner |
 | `.github/workflows/deploy.yml` | Deploy pipeline |
 
 ## Local development

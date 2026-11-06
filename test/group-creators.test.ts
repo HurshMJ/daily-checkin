@@ -239,6 +239,33 @@ describe("createGroup", () => {
     expect(await count("SELECT COUNT(*) AS n FROM memberships WHERE member_id = ?1", await idOf("Bob"))).toBe(0);
   });
 
+  it("writes no membership when the last row written has the id of a Group the refused Member owns by hand-over", async () => {
+    const app = startApp();
+    await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
+    await app.createLogin({ username: "Bob", password: PASSWORD });
+    const alice = await idOf("Alice");
+    const bob = await idOf("Bob");
+    const groups = createGroups({ env, clock: app.clock });
+    const invites = createInvites({ env, clock: app.clock });
+    for (const name of ["Friday", "Saturday"]) expect((await groups.createGroup(alice, name)).ok).toBe(true);
+    const [, saturday] = await groups.membershipsFor(alice);
+    const invite = await invites.makeInvite(alice, saturday.groupId, "");
+    if (!invite.ok) throw new Error("make failed");
+    await invites.joinWithInvite(bob, invite.token);
+    expect((await groups.handOver(alice, saturday.groupId, bob)).ok).toBe(true);
+    // Bob, now Saturday's Owner, makes its second Invite: that row's id is
+    // Saturday's id, so last_insert_rowid() names Bob's Group when he tries.
+    expect((await invites.makeInvite(bob, saturday.groupId, "")).ok).toBe(true);
+    const last = await env.DB.prepare("SELECT last_insert_rowid() AS id").first<{ id: number }>();
+    expect(last!.id).toBe(saturday.groupId);
+    const before = await rowCounts();
+
+    const refused = await groups.createGroup(bob, "Sneaky");
+
+    expect(refused).toEqual({ ok: false, reason: "not-allowed" });
+    expect(await rowCounts()).toEqual(before);
+  });
+
   it("still names an invalid name for a Member with the right", async () => {
     const app = startApp();
     await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });

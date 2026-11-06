@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import { hashToken, randomToken } from "~/auth/crypto";
-import { memberLookupSql, operatorResetLinkStatements, sqlText } from "~/auth/reset-link-sql";
+import { memberLookupSql, operatorResetLinkStatements } from "~/auth/reset-link-sql";
+import { sqlText } from "~/sql-text";
 import { createResetLinks } from "~/auth/reset-links";
 import { createInvites } from "~/invites";
 

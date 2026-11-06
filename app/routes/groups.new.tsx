@@ -16,7 +16,7 @@ export function meta(_: Route.MetaArgs) {
 
 export function loader({ context }: Route.LoaderArgs) {
   const { colour, canCreateGroups } = requireMember(context);
-  return { colour, allowed: canCreateGroups };
+  return { colour, canCreateGroups };
 }
 
 /**
@@ -26,12 +26,12 @@ export function loader({ context }: Route.LoaderArgs) {
  */
 export async function action({ request, context }: Route.ActionArgs) {
   const member = requireMember(context);
-  const notAllowed = () => data({ allowed: false as const }, { status: 403 });
+  const notAllowed = () => data({ canCreateGroups: false as const }, { status: 403 });
   if (!member.canCreateGroups) return notAllowed();
   const form = await request.formData();
   const result = await createGroups(context.get(appContext)).createGroup(member.id, String(form.get("name") ?? ""));
   if (!result.ok && result.reason === "not-allowed") return notAllowed();
-  if (!result.ok) return data({ allowed: true as const, error: result.error, name: result.name }, { status: 400 });
+  if (!result.ok) return data({ canCreateGroups: true as const, error: result.error, name: result.name }, { status: 400 });
   return redirect("/", 303);
 }
 
@@ -41,7 +41,7 @@ export async function action({ request, context }: Route.ActionArgs) {
  */
 export default function NewGroup({ loaderData, actionData }: Route.ComponentProps) {
   const submitting = useSubmitting();
-  if (!loaderData.allowed || actionData?.allowed === false) {
+  if (!loaderData.canCreateGroups || actionData?.canCreateGroups === false) {
     return (
       <>
         <TopBar back colour={loaderData.colour} />
