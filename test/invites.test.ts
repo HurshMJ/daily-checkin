@@ -31,7 +31,7 @@ async function membersOf(groupId: number): Promise<number[]> {
 /** Alice owns "Friday"; Bob and Carol have logins and no Group. */
 async function setUp() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
   await app.createLogin({ username: "Carol", password: PASSWORD });

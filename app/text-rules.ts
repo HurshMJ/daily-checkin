@@ -9,6 +9,15 @@ export function normaliseText(raw: string): string {
   return raw.trim().normalize("NFC");
 }
 
+/**
+ * The key of a name in the one namespace usernames and Display Names share
+ * (the name_keys table): trimmed, NFC-normalised and lower-cased, so names
+ * that differ only in case are one name.
+ */
+export function nameKey(raw: string): string {
+  return normaliseText(raw).toLowerCase();
+}
+
 /** The length of a text in code points, so an emoji such as 🎲 counts once. */
 export function codePoints(text: string): number {
   return [...text].length;

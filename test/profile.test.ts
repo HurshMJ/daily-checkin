@@ -43,7 +43,7 @@ function groupsCard(main: string): string {
 /** Alice owns "Friday" with Bob in it. */
 async function setUp() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
   const friday = await idOf("groups", "name", "Friday");

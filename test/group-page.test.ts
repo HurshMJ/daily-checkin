@@ -33,7 +33,7 @@ function pendingTiles(main: string): string[] {
 /** Alice owns "Friday"; Bob is a Member through an Invite; Carol is in no Group. */
 async function setUp() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, colour: "violet" });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, colour: "violet", canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   const bob = await app.createLogin({ username: "Bob", password: PASSWORD, colour: "sky" });
   const carol = await app.createLogin({ username: "Carol", password: PASSWORD });

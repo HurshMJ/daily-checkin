@@ -3,6 +3,7 @@ import {
   hasInvisible,
   hasInvisibleOutsideEmoji,
   INVISIBLE_MESSAGE,
+  nameKey,
   normaliseText,
 } from "~/text-rules";
 
@@ -16,14 +17,8 @@ export function normaliseUsername(raw: string): string {
   return normaliseText(raw);
 }
 
-/**
- * The key of a name in the one namespace usernames and Display Names share
- * (the name_keys table): trimmed, NFC-normalised and lower-cased, so names
- * that differ only in case are one name.
- */
-export function nameKey(raw: string): string {
-  return normaliseText(raw).toLowerCase();
-}
+/** The key of a name in the namespace usernames and Display Names share; the rule lives in text-rules. */
+export { nameKey };
 
 /** The key usernames are unique on and looked up by at login. */
 export function usernameKey(raw: string): string {

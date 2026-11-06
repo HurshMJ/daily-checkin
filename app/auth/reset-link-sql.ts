@@ -4,9 +4,12 @@
  * which runs its statements with `wrangler d1 execute`), so both issue links
  * the same way. The tests run the Operator statements too.
  *
- * This module is pure and imports nothing: Node runs it directly through type
- * stripping, so it must stay erasable TypeScript with no path aliases.
+ * This module is pure: Node runs it directly through type stripping, so it
+ * must stay erasable TypeScript with no path aliases, and it imports only
+ * another module of the same kind, by its .ts path.
  */
+
+import { sqlText } from "../sql-text.ts";
 
 /** How long a Password Reset Link works after it is made. */
 export const RESET_LINK_LIFETIME_MS = 60 * 60 * 1000;
@@ -20,17 +23,6 @@ export function usableResetLink(table: string, nowSql: string): string {
 }
 
 const TOKEN_HASH = /^[0-9a-f]{64}$/;
-
-/**
- * A SQL text literal. `wrangler d1 execute --command` takes no bound
- * parameters, so a typed value such as a username goes into the SQL through
- * this: single quotes are doubled, and a NUL character, which would end the
- * text early, is refused.
- */
-export function sqlText(value: string): string {
-  if (value.includes("\u0000")) throw new Error("Text holds a NUL character");
-  return `'${value.replaceAll("'", "''")}'`;
-}
 
 /** The query the Operator command runs first: the Member's id for a username key, if any. */
 export function memberLookupSql(usernameKey: string): string {

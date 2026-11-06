@@ -23,7 +23,7 @@ The name the app shows for a Member on Boards, in History, on the Group page and
 _Avoid_: Nickname, label, visible name
 
 **Owner**:
-The one Member of a Group who invites or removes Members and sets the Game On Threshold. The creator starts as Owner and can hand ownership to another Member.
+The one Member of a Group who invites or removes Members and sets the Game On Threshold. The creator starts as Owner and can hand ownership to another Member. Only a Member the Operator has allowed to create Groups can create one; receiving ownership by hand-over does not give that right.
 _Avoid_: Admin, leader, host
 
 **Invite**:
@@ -39,7 +39,7 @@ A one-time link the Operator generates so a person can create a login without jo
 _Avoid_: Invite, sign-up link
 
 **Operator**:
-The person who deploys and runs the app. Acts from outside the app rather than through a Member's login, for example to let a locked-out Owner back in.
+The person who deploys and runs the app. Acts from outside the app rather than through a Member's login, for example to let a locked-out Owner back in, or to allow a Member to create Groups (or take that right away).
 _Avoid_: Admin, superuser, host
 
 ### Availability

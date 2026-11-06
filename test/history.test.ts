@@ -60,7 +60,7 @@ function boardRows(main: string): string[] {
  */
 async function setUp(now = "2026-11-03T12:00:00Z") {
   const app = startApp({ now });
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, colour: "violet" });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, colour: "violet", canCreateGroups: true });
   const bob = await app.createLogin({ username: "Bob", password: PASSWORD, colour: "sky" });
   const carol = await app.createLogin({ username: "Carol", password: PASSWORD });
   const ids = { alice: await memberId("Alice"), bob: await memberId("Bob"), carol: await memberId("Carol") };

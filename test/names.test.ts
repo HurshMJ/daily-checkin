@@ -167,6 +167,7 @@ describe("saveProfileNames", () => {
       displayName: "Ace 🎯",
       colour: "pink",
       passwordWasReset: false,
+      canCreateGroups: false,
     });
   });
 

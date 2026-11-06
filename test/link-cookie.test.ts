@@ -19,7 +19,7 @@ function bodyOf(html: string): string {
 /** Alice owns "Friday" and has made one Invite to it; `makeInvite` makes another. */
 async function aliceInvite() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   const { id: aliceId } = (await env.DB.prepare("SELECT id FROM members WHERE username = 'Alice'").first<{ id: number }>())!;
   const { id: groupId } = (await env.DB.prepare("SELECT id FROM groups WHERE name = 'Friday'").first<{ id: number }>())!;

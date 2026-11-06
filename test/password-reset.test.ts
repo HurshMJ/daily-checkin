@@ -2,7 +2,8 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import { hashToken, randomToken } from "~/auth/crypto";
-import { memberLookupSql, operatorResetLinkStatements, sqlText } from "~/auth/reset-link-sql";
+import { memberLookupSql, operatorResetLinkStatements } from "~/auth/reset-link-sql";
+import { sqlText } from "~/sql-text";
 import { createResetLinks } from "~/auth/reset-links";
 import { createInvites } from "~/invites";
 
@@ -23,9 +24,9 @@ async function idOf(username: string): Promise<number> {
  */
 async function friday() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
   const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
-  const carol = await app.createLogin({ username: "Carol", password: PASSWORD });
+  const carol = await app.createLogin({ username: "Carol", password: PASSWORD, canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   await carol.post("/groups/new", { name: "Other" });
   const ids = { alice: await idOf("Alice"), bob: await idOf("Bob"), carol: await idOf("Carol") };
@@ -167,7 +168,7 @@ describe("using a Password Reset Link", () => {
 
   it("refuses the Member's username as a password", async () => {
     const app = startApp();
-    const owner = await app.createLogin({ username: "Alice", password: PASSWORD });
+    const owner = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
     await app.createLogin({ username: "Bob the twelfth", password: PASSWORD });
     await owner.post("/groups/new", { name: "Friday" });
     const ids = { alice: await idOf("Alice"), bob: await idOf("Bob the twelfth") };

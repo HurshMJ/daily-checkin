@@ -36,7 +36,9 @@ describe("Setup Link", () => {
     expect(tonight.status).toBe(200);
     const page = await tonight.text();
     expect(page).toContain("Tonight");
-    expect(page).toContain("Create a Group");
+    expect(page).toContain("not in a Group yet");
+    // A Setup Link login cannot create Groups until the Operator allows it.
+    expect(page).not.toContain('href="/groups/new"');
     // The You pill wears the chosen colour and links to the profile, which names the Member.
     expect(page).toMatch(/<a[^>]*href="\/profile"[^>]*>\s*<span[^>]*data-colour="violet"/);
     // Tonight needs only the colour: the username stays out of its loader data.
@@ -137,7 +139,7 @@ describe("Logging in", () => {
 
     expect(response.status).toBe(302);
     expect(response.headers.get("Location")).toBe("/");
-    expect(await (await phone.get("/")).text()).toContain("Create a Group");
+    expect(await (await phone.get("/")).text()).toContain("not in a Group yet");
   });
 
   it("sends a logged-in visit to /login on to Tonight", async () => {

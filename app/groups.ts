@@ -116,7 +116,20 @@ export function deleteGroupsOwnedAloneStatement(db: D1Database, memberId: number
     .bind(memberId);
 }
 
-export type CreateGroupResult = { ok: true; groupId: number } | { ok: false; error: string; name: string };
+/**
+ * What a Member without the right to create Groups is told to do instead, on
+ * the empty Tonight and on the Create a Group page.
+ */
+export const ASK_FOR_INVITE_MESSAGE = "Ask a Group's Owner for an Invite, then open the Invite link they send you.";
+
+/**
+ * The result of creating a Group: invalid carries the name's error and the
+ * name as typed; not-allowed means the Member lacks the right to create Groups.
+ */
+export type CreateGroupResult =
+  | { ok: true; groupId: number }
+  | { ok: false; reason: "invalid"; error: string; name: string }
+  | { ok: false; reason: "not-allowed" };
 
 /**
  * The result of an Owner's change to a Group. A Member who is not the Owner
@@ -185,24 +198,40 @@ export function createGroups({ env, clock, ...delivery }: { env: Env; clock: Clo
   return {
     /**
      * Creates a Group owned by the Member, with the default threshold, and
-     * makes the Member its first Member. Both rows are written in one D1
-     * batch, which is one transaction, so a Group never lacks its Owner.
+     * makes the Member its first Member, only when the Operator has allowed
+     * the Member to create Groups. Both rows are written in one D1 batch,
+     * which is one transaction, so a Group never lacks its Owner. The right is
+     * checked inside the insert itself, so a right taken away after the page
+     * loaded still refuses the create, and a refused create writes no row.
      */
     async createGroup(memberId: number, rawName: string): Promise<CreateGroupResult> {
       const name = normaliseGroupName(rawName);
       const error = groupNameError(name);
-      if (error) return { ok: false, error, name };
+      if (error) return { ok: false, reason: "invalid", error, name };
 
       const now = clock.now().toISOString();
       const [inserted] = await db.batch<{ id: number }>([
         db
-          .prepare("INSERT INTO groups (name, owner_id, threshold, created_at) VALUES (?1, ?2, ?3, ?4) RETURNING id")
+          .prepare(
+            `INSERT INTO groups (name, owner_id, threshold, created_at)
+             SELECT ?1, ?2, ?3, ?4 WHERE EXISTS (SELECT 1 FROM members WHERE id = ?2 AND can_create_groups = 1)
+             RETURNING id`,
+          )
           .bind(name, memberId, DEFAULT_THRESHOLD, now),
+        // last_insert_rowid() keeps an earlier row's id when the insert above
+        // wrote nothing, so the membership is written only when that insert
+        // just wrote this Member's Group.
         db
-          .prepare("INSERT INTO memberships (group_id, member_id, joined_at) VALUES (last_insert_rowid(), ?1, ?2)")
+          .prepare(
+            `INSERT INTO memberships (group_id, member_id, joined_at)
+             SELECT last_insert_rowid(), ?1, ?2
+             WHERE changes() = 1 AND EXISTS (SELECT 1 FROM groups WHERE id = last_insert_rowid() AND owner_id = ?1)`,
+          )
           .bind(memberId, now),
       ]);
-      return { ok: true, groupId: inserted.results[0].id };
+      const created = inserted.results[0];
+      if (!created) return { ok: false, reason: "not-allowed" };
+      return { ok: true, groupId: created.id };
     },
 
     /** The Group with its Members, for one of its Members; null for anyone else or no such Group. */

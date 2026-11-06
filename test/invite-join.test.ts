@@ -30,7 +30,7 @@ function boardNames(html: string): string[] {
 /** Alice owns "Friday" and has made one Invite to it. */
 async function setUp() {
   const app = startApp();
-  const alice = await app.createLogin({ username: "Alice", password: PASSWORD });
+  const alice = await app.createLogin({ username: "Alice", password: PASSWORD, canCreateGroups: true });
   await alice.post("/groups/new", { name: "Friday" });
   const friday = await idOf("groups", "name", "Friday");
   const invites = createInvites({ env, clock: app.clock });
@@ -189,7 +189,7 @@ describe("logging in from an Invite", () => {
 describe("joining while logged in", () => {
   it("joins and stacks the Board with the Member's other Boards", async () => {
     const { app, token } = await setUp();
-    const bob = await app.createLogin({ username: "Bob", password: PASSWORD });
+    const bob = await app.createLogin({ username: "Bob", password: PASSWORD, canCreateGroups: true });
     await bob.post("/groups/new", { name: "Bob's" });
     // Boards stack by when the Member joined, so join a minute later.
     app.clock.set("2026-11-03T12:01:00Z");

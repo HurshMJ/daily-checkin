@@ -41,6 +41,11 @@ export interface CurrentMember {
    * yet seen the "your password was reset" notice.
    */
   passwordWasReset: boolean;
+  /**
+   * True when the Operator has allowed the Member to create Groups. Owning a
+   * Group by hand-over does not set it.
+   */
+  canCreateGroups: boolean;
 }
 
 export type CreateLoginResult =
@@ -409,13 +414,16 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
     async resolveSession(token: string): Promise<CurrentMember | null> {
       const now = clock.now();
       const tokenHash = await hashToken(token);
-      const [, found] = await db.batch<Omit<CurrentMember, "passwordWasReset"> & { passwordResetNotice: number }>([
+      const [, found] = await db.batch<
+        Omit<CurrentMember, "passwordWasReset" | "canCreateGroups"> & { passwordResetNotice: number; canCreateGroups: number }
+      >([
         db
           .prepare("UPDATE sessions SET expires_at = ?1 WHERE token_hash = ?2 AND expires_at > ?3")
           .bind(sessionExpiry(now), tokenHash, now.toISOString()),
         db
           .prepare(
-            `SELECT m.id, m.username, m.display_name AS displayName, m.colour, m.password_reset_notice AS passwordResetNotice
+            `SELECT m.id, m.username, m.display_name AS displayName, m.colour, m.password_reset_notice AS passwordResetNotice,
+                    m.can_create_groups AS canCreateGroups
              FROM sessions s JOIN members m ON m.id = s.member_id
              WHERE s.token_hash = ?1 AND s.expires_at > ?2`,
           )
@@ -423,8 +431,8 @@ export function createAuth({ env, clock }: { env: Env; clock: Clock }) {
       ]);
       const row = found.results[0];
       if (!row) return null;
-      const { passwordResetNotice, ...member } = row;
-      return { ...member, passwordWasReset: passwordResetNotice === 1 };
+      const { passwordResetNotice, canCreateGroups, ...member } = row;
+      return { ...member, passwordWasReset: passwordResetNotice === 1, canCreateGroups: canCreateGroups === 1 };
     },
 
     /**
