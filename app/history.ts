@@ -1,6 +1,6 @@
 import type { AvatarColour } from "~/auth/palette";
 import { type MemberNames, shownName } from "~/auth/rules";
-import { type BoardRow, compareShownNames, sortRows, yesAnswersFrom } from "~/checkins";
+import { type BoardRow, compareShownNames, GAME_STATE_LABELS, sortRows, yesAnswersFrom } from "~/checkins";
 import { addNights, gameNightOf, nightEnd } from "~/game-night";
 import type { Clock } from "~/services";
 
@@ -83,16 +83,13 @@ export interface PastNight extends PastNightSummary {
   rows: PastRow[];
 }
 
-/** How each final state reads on a past night's pill and banner. */
-export const FINAL_STATE_LABELS: Record<FinalState, string> = { on: "Game On", off: "Game Off", never: "Never on" };
-
 /** The pill a past night shows in the list: its final state, or Nobody answered for a never-on night without Check-ins. */
 export function pastPill(night: Pick<PastNightSummary, "state" | "answered">): {
   state: FinalState | "nobody";
   text: string;
 } {
   if (night.state === "never" && night.answered === 0) return { state: "nobody", text: "Nobody answered" };
-  return { state: night.state, text: FINAL_STATE_LABELS[night.state] };
+  return { state: night.state, text: GAME_STATE_LABELS[night.state] };
 }
 
 /** A past night's Yes count and threshold, such as "3 Yes · Game On at 3". */
@@ -187,6 +184,8 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
       await db.batch([
         // Final state: Game On when the night's Members reached the threshold,
         // else Game Off when the Group was Game On during the night, else Never on.
+        // This CASE restates pillFor's on/off rule (app/checkins.ts) in SQL and
+        // must change with it.
         // SQLite needs the WHERE before ON CONFLICT when an INSERT's SELECT has a join.
         db
           .prepare(

@@ -37,6 +37,12 @@ export function noteError(note: string | null): string | null {
 export type PillState = "on" | "off" | "needs";
 
 /**
+ * How each outcome of the Game On rule reads on a pill: tonight's Board uses
+ * on and off, a past night's pill and banner use all three.
+ */
+export const GAME_STATE_LABELS = { on: "Game On", off: "Game Off", never: "Never on" } as const;
+
+/**
  * The Board's pill. Game On at or above the threshold; Game Off when the Group
  * was Game On earlier tonight and has dropped below; otherwise how many more
  * Yes answers it needs.
@@ -45,8 +51,8 @@ export function pillFor({ yes, threshold, wasOn }: { yes: number; threshold: num
   state: PillState;
   text: string;
 } {
-  if (yes >= threshold) return { state: "on", text: "Game On" };
-  if (wasOn) return { state: "off", text: "Game Off" };
+  if (yes >= threshold) return { state: "on", text: GAME_STATE_LABELS.on };
+  if (wasOn) return { state: "off", text: GAME_STATE_LABELS.off };
   return { state: "needs", text: `Needs ${threshold - yes} more Yes` };
 }
 
