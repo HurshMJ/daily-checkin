@@ -246,11 +246,27 @@ describe("joining with an Invite", () => {
     expect(await inv.joinWithInvite(ids.bob, made.token)).toBe("joined");
   });
 
-  it("counts a joining Member's Yes at once, so a later drop shows Game Off", async () => {
+  it("starts a Member who joins mid-night with no answer in the Group", async () => {
+    const { alice, invites: inv, ids } = await setUp();
+    const made = await inv.makeInvite(ids.alice, ids.friday, "");
+    if (!made.ok) throw new Error("make failed");
+
+    expect(await inv.joinWithInvite(ids.bob, made.token)).toBe("joined");
+    const page = await (await alice.get("/")).text();
+    expect(page).toContain('<span class="board-row-answer">No answer yet</span>');
+    expect(page).not.toContain('class="board-row" data-availability="yes"');
+  });
+
+  it("counts a rejoining Member's earlier Yes at once, so a later drop shows Game Off", async () => {
     const { alice, invites: inv, checkins, ids } = await setUp();
     await env.DB.prepare("UPDATE groups SET threshold = 2 WHERE id = ?1").bind(ids.friday).run();
-    await checkins.setAvailability(ids.alice, "yes");
-    await checkins.setAvailability(ids.bob, "yes");
+    const first = await inv.makeInvite(ids.alice, ids.friday, "");
+    if (!first.ok) throw new Error("make failed");
+    expect(await inv.joinWithInvite(ids.bob, first.token)).toBe("joined");
+    await checkins.setAvailability(ids.bob, ids.friday, "yes");
+    // Bob leaves, then Alice's Yes alone is not enough.
+    await env.DB.prepare("DELETE FROM memberships WHERE group_id = ?1 AND member_id = ?2").bind(ids.friday, ids.bob).run();
+    await checkins.setAvailability(ids.alice, ids.friday, "yes");
     const made = await inv.makeInvite(ids.alice, ids.friday, "");
     if (!made.ok) throw new Error("make failed");
 
@@ -263,7 +279,7 @@ describe("joining with an Invite", () => {
     expect(page).toContain('data-state="on"><p class="board-pill">Game On</p>');
 
     // Bob drops to Maybe: the Board says Game Off, not "Needs 1 more Yes".
-    await checkins.setAvailability(ids.bob, "maybe");
+    await checkins.setAvailability(ids.bob, ids.friday, "maybe");
     expect(await (await alice.get("/")).text()).toContain('<p class="board-pill">Game Off</p>');
   });
 });

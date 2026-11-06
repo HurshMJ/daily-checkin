@@ -77,13 +77,15 @@ function take(app: ReturnType<typeof startApp>): string[] {
 
 type Device = Awaited<ReturnType<typeof setUp>>["Alice"];
 
-async function answer(device: Device, availability: "yes" | "maybe" | "no") {
-  const response = await device.post("/?index", { intent: "availability", availability });
+/** Posts the device's answer on one Board, Friday's unless another Group is named. */
+async function answer(device: Device, availability: "yes" | "maybe" | "no", group = "Friday") {
+  const groupId = String(await idOf("groups", "name", group));
+  const response = await device.post("/?index", { intent: "availability", groupId, availability });
   expect(response.status).toBe(303);
 }
 
 describe("someone said Yes", () => {
-  it("goes once to the other Members of all the Member's Groups, never to the Member", async () => {
+  it("goes only to the other Members of the Group the Yes is in, once per Group, never to the Member", async () => {
     const { app, Alice, friday } = await setUp();
     // Saturday: Alice and Bob again, plus Dave.
     await Alice.post("/groups/new", { name: "Saturday" });
@@ -94,18 +96,25 @@ describe("someone said Yes", () => {
     take(app);
 
     await answer(Alice, "yes");
-    expect(take(app)).toEqual(["bob: Alice said Yes", "carol: Alice said Yes", "dave: Alice said Yes"]);
+    expect(take(app)).toEqual(["bob: Alice said Yes in Friday", "carol: Alice said Yes in Friday"]);
+    await answer(Alice, "no", "Saturday");
+    expect(take(app)).toEqual([]);
+    await answer(Alice, "yes", "Saturday");
+    expect(take(app)).toEqual(["bob: Alice said Yes in Saturday", "dave: Alice said Yes in Saturday"]);
+    await answer(Alice, "yes");
+    await answer(Alice, "yes", "Saturday");
+    expect(take(app)).toEqual([]);
   });
 
   it("carries the payload the service worker shows", async () => {
-    const { app, Alice } = await setUp();
+    const { app, Alice, friday } = await setUp();
     await answer(Alice, "yes");
     const payload = JSON.parse(app.push.sent[0].payload);
     expect(payload).toEqual({
-      title: "Alice said Yes",
-      body: "They are in for tonight. Open Tonight to see your Boards.",
+      title: "Alice said Yes in Friday",
+      body: "They are in for tonight. Open Tonight to see the Board.",
       url: "/",
-      tag: `said-yes-${await idOf("members", "username", "Alice")}-2026-11-03`,
+      tag: `said-yes-${await idOf("members", "username", "Alice")}-${friday}-2026-11-03`,
     });
   });
 
@@ -115,15 +124,15 @@ describe("someone said Yes", () => {
 
     await answer(Alice, "yes");
 
-    expect(take(app)).toEqual(["bob: Ace 🎯 said Yes", "carol: Ace 🎯 said Yes"]);
+    expect(take(app)).toEqual(["bob: Ace 🎯 said Yes in Friday", "carol: Ace 🎯 said Yes in Friday"]);
   });
 
-  it("is sent at most once per Member per Game Night, however the answer flips", async () => {
+  it("is sent at most once per Member per Group per Game Night, however the answer flips", async () => {
     const { app, Alice } = await setUp();
     await answer(Alice, "maybe");
     expect(take(app)).toEqual([]);
     await answer(Alice, "yes");
-    expect(take(app)).toEqual(["bob: Alice said Yes", "carol: Alice said Yes"]);
+    expect(take(app)).toEqual(["bob: Alice said Yes in Friday", "carol: Alice said Yes in Friday"]);
     await answer(Alice, "no");
     await answer(Alice, "yes");
     await answer(Alice, "yes");
@@ -131,15 +140,18 @@ describe("someone said Yes", () => {
   });
 
   it("is not sent for a Note-only edit", async () => {
-    const { app, Alice } = await setUp();
+    const { app, Alice, friday } = await setUp();
     await answer(Alice, "maybe");
-    expect((await Alice.post("/?index", { intent: "note", note: "on after 10" })).status).toBe(303);
+    expect((await Alice.post("/?index", { intent: "note", groupId: String(friday), note: "on after 10" })).status).toBe(303);
     expect(take(app)).toEqual([]);
   });
 
-  it("is not sent when a Member with a Yes joins a Group", async () => {
+  it("is not sent again when a Member with a Yes leaves and rejoins a Group", async () => {
     const { app, Dave, friday } = await setUp();
+    await addMember(app, friday, "Dave");
     await answer(Dave, "yes");
+    expect((await Dave.post("/profile", { intent: "leave", groupId: String(friday), confirm: "yes" })).status).toBe(303);
+    take(app);
     const token = await inviteTo(app, friday);
     await Dave.get(`/invite/${token}`);
     expect((await Dave.post("/invite", { intent: "join" })).status).toBe(302);
@@ -157,11 +169,11 @@ describe("Game On and Game Off from Check-ins", () => {
 
     await answer(Carol, "yes");
     expect(take(app)).toEqual([
-      "alice: Carol said Yes",
+      "alice: Carol said Yes in Friday",
       "alice: Game On: Friday",
-      "bob: Carol said Yes",
+      "bob: Carol said Yes in Friday",
       "bob: Game On: Friday",
-      "dave: Carol said Yes",
+      "dave: Carol said Yes in Friday",
       "dave: Game On: Friday",
     ]);
   });
@@ -227,11 +239,13 @@ describe("Game On and Game Off from threshold and membership changes", () => {
     expect(take(app)).toEqual([]);
   });
 
-  it("sends Game On to the others when a Member with a Yes joins and tips the Group", async () => {
+  it("sends Game On to the others when a Member with a Yes rejoins and tips the Group", async () => {
     const { app, Alice, Bob, Dave, friday } = await setUp();
+    await addMember(app, friday, "Dave");
+    await answer(Dave, "yes");
+    expect((await Dave.post("/profile", { intent: "leave", groupId: String(friday), confirm: "yes" })).status).toBe(303);
     await answer(Alice, "yes");
     await answer(Bob, "yes");
-    await answer(Dave, "yes");
     take(app);
 
     const token = await inviteTo(app, friday);
@@ -287,7 +301,7 @@ describe("notification toggles and devices", () => {
     await answer(Carol, "yes");
     take(app);
     await answer(Bob, "yes");
-    expect(take(app)).toEqual(["alice: Bob said Yes", "alice: Game On: Friday", "carol: Bob said Yes", "carol: Game On: Friday"]);
+    expect(take(app)).toEqual(["alice: Bob said Yes in Friday", "alice: Game On: Friday", "carol: Bob said Yes in Friday", "carol: Game On: Friday"]);
 
     await answer(Alice, "yes");
     await answer(Carol, "no");
@@ -300,14 +314,14 @@ describe("notification toggles and devices", () => {
     await laptop.post("/login", { username: "Bob", password: PASSWORD });
     await laptop.subscribe(pushEndpoint("bob-laptop"));
     await answer(Alice, "yes");
-    expect(take(app)).toEqual(["bob-laptop: Alice said Yes", "bob: Alice said Yes", "carol: Alice said Yes"]);
+    expect(take(app)).toEqual(["bob-laptop: Alice said Yes in Friday", "bob: Alice said Yes in Friday", "carol: Alice said Yes in Friday"]);
 
     // Bob logs his phone out; a new night lets Alice's Yes send again.
     await Bob.post("/logout", {});
     app.clock.set(RESET_4_NOV);
     await app.runScheduled();
     await answer(Alice, "yes");
-    expect(take(app)).toEqual(["bob-laptop: Alice said Yes", "carol: Alice said Yes"]);
+    expect(take(app)).toEqual(["bob-laptop: Alice said Yes in Friday", "carol: Alice said Yes in Friday"]);
   });
 
   it("deletes a subscription the push service answers 404 or 410 for", async () => {
@@ -315,10 +329,10 @@ describe("notification toggles and devices", () => {
       pushStatuses: { [endpointOf("Bob")]: 410, [endpointOf("Carol")]: 404 },
     });
     await answer(Alice, "yes");
-    expect(take(app)).toEqual(["bob: Alice said Yes", "carol: Alice said Yes"]);
+    expect(take(app)).toEqual(["bob: Alice said Yes in Friday", "carol: Alice said Yes in Friday"]);
 
     await answer(Bob, "yes");
-    expect(take(app)).toEqual(["alice: Bob said Yes"]);
+    expect(take(app)).toEqual(["alice: Bob said Yes in Friday"]);
   });
 
   it("keeps a subscription after a 500 or a failed send, never fails the request, and logs no endpoint", async () => {
@@ -330,11 +344,11 @@ describe("notification toggles and devices", () => {
       },
     });
     await answer(Alice, "yes");
-    expect(take(app)).toEqual(["bob: Alice said Yes", "carol: Alice said Yes"]);
+    expect(take(app)).toEqual(["bob: Alice said Yes in Friday", "carol: Alice said Yes in Friday"]);
     expect(errors).toHaveBeenCalledWith("Push said_yes: 2 of 2 not sent (status 500, TypeError)");
 
     await answer(Bob, "yes");
-    expect(take(app)).toEqual(["alice: Bob said Yes", "carol: Bob said Yes"]);
+    expect(take(app)).toEqual(["alice: Bob said Yes in Friday", "carol: Bob said Yes in Friday"]);
     expect(JSON.stringify(errors.mock.calls)).not.toContain("fcm.googleapis.com");
   });
 });
@@ -349,12 +363,12 @@ describe("a new Game Night", () => {
     await app.runScheduled();
     await answer(Alice, "yes");
     await answer(Bob, "yes");
-    expect(take(app)).toEqual(["alice: Bob said Yes", "bob: Alice said Yes", "carol: Alice said Yes", "carol: Bob said Yes"]);
+    expect(take(app)).toEqual(["alice: Bob said Yes in Friday", "bob: Alice said Yes in Friday", "carol: Alice said Yes in Friday", "carol: Bob said Yes in Friday"]);
     await answer(Carol, "yes");
     expect(take(app)).toEqual([
-      "alice: Carol said Yes",
+      "alice: Carol said Yes in Friday",
       "alice: Game On: Friday",
-      "bob: Carol said Yes",
+      "bob: Carol said Yes in Friday",
       "bob: Game On: Friday",
     ]);
   });
@@ -370,8 +384,8 @@ describe("payloads", () => {
     await other.subscribe(endpointOf("Bob"));
     await owner.post("/groups/" + (await idOf("groups", "name", "🎲".repeat(40))), { intent: "threshold", threshold: "1" });
     take(app);
-    await answer(owner, "yes");
-    expect(take(app)).toEqual([`bob: Game On: ${"🎲".repeat(40)}`, `bob: ${"Ł".repeat(32)} said Yes`]);
+    await answer(owner, "yes", "🎲".repeat(40));
+    expect(take(app)).toEqual([`bob: Game On: ${"🎲".repeat(40)}`, `bob: ${"Ł".repeat(32)} said Yes in ${"🎲".repeat(40)}`]);
   });
 
   it("allow 3993 bytes of plaintext, the most RFC 8291 fits in a 4096-byte record, and refuse 3994", () => {
@@ -395,9 +409,13 @@ describe("payloads", () => {
 
 describe("a night already on when migration 0007 is applied", () => {
   it("sends no stale Game On, Game Off or someone said Yes", async () => {
-    // Start again with the schema as it was before 0007.
+    // Start again with the schema as it was before 0007. 0011 copies the
+    // checkins columns 0007 adds, so it waits too; both run at the deploy.
     await reset();
-    await applyD1Migrations(env.DB, env.TEST_MIGRATIONS.filter((migration) => !migration.name.startsWith("0007")));
+    await applyD1Migrations(
+      env.DB,
+      env.TEST_MIGRATIONS.filter((migration) => !/^00(07|11)/.test(migration.name)),
+    );
     const app = startApp();
     const devices = {} as Record<Name, Awaited<ReturnType<typeof app.createLogin>>>;
     for (const name of ["Alice", "Bob", "Carol"] as const) {
@@ -505,7 +523,7 @@ async function runAt(app: ReturnType<typeof startApp>, iso: string) {
 }
 
 describe("the Reminder", () => {
-  it("goes at 17:00 UTC+4 to each device of a Member in a Group who has not answered tonight", async () => {
+  it("goes at 17:00 UTC+4 to each device of a Member who has not answered tonight in a Group", async () => {
     const { app, Alice, Bob } = await setUp();
     await answer(Alice, "yes");
     await answer(Bob, "maybe");
@@ -520,12 +538,28 @@ describe("the Reminder", () => {
       {
         to: "carol",
         title: "Are you in tonight?",
-        body: "You have not answered for tonight yet. Open Tonight to say Yes, Maybe or No.",
+        body: "Not every Group has your answer for tonight yet. Open Tonight to say Yes, Maybe or No.",
         url: "/",
         tag: "reminder-2026-11-03",
       },
       expect.objectContaining({ to: "carol-laptop", title: "Are you in tonight?", tag: "reminder-2026-11-03" }),
     ]);
+  });
+
+  it("goes once to a Member who answered one Group but not another, and not to one who answered every Group", async () => {
+    const { app, Alice, Bob, Carol } = await setUp();
+    // Saturday: Alice, Bob and Dave. Sunday: Alice and Dave.
+    await Alice.post("/groups/new", { name: "Saturday" });
+    await Alice.post("/groups/new", { name: "Sunday" });
+    for (const name of ["Bob", "Dave"]) await addMember(app, await idOf("groups", "name", "Saturday"), name);
+    await addMember(app, await idOf("groups", "name", "Sunday"), "Dave");
+    for (const device of [Alice, Bob, Carol]) await answer(device, "yes");
+    await answer(Bob, "no", "Saturday");
+    take(app);
+
+    // Alice misses Saturday and Sunday, Dave misses both; Bob and Carol answered every Group.
+    await runAt(app, REMINDER_3_NOV);
+    expect(take(app)).toEqual(["alice: Are you in tonight?", "dave: Are you in tonight?"]);
   });
 
   it.each(["yes", "maybe", "no"] as const)("does not go to a Member who answered %s", async (availability) => {
@@ -589,6 +623,8 @@ describe("the Daily Summary", () => {
     await answer(Bob, "yes");
     await answer(Alice, "maybe");
     await answer(Carol, "no");
+    // Carol answers Solo apart: each Group lists only its own answers.
+    await answer(Carol, "yes", "Solo");
     take(app);
 
     await runAt(app, SUMMARY_3_NOV);
@@ -605,15 +641,15 @@ describe("the Daily Summary", () => {
       { to: "carol", ...summary },
       {
         to: "carol",
-        title: "Solo: 1 No, 1 no answer",
-        body: "No: Carol\nNo answer: Dave",
+        title: "Solo: 1 Yes, 1 no answer",
+        body: "Yes: Carol\nNo answer: Dave",
         url: `/groups/${solo}`,
         tag: `daily-summary-${solo}-2026-11-03`,
       },
       {
         to: "dave",
-        title: "Solo: 1 No, 1 no answer",
-        body: "No: Carol\nNo answer: Dave",
+        title: "Solo: 1 Yes, 1 no answer",
+        body: "Yes: Carol\nNo answer: Dave",
         url: `/groups/${solo}`,
         tag: `daily-summary-${solo}-2026-11-03`,
       },
@@ -692,8 +728,9 @@ describe("the Daily Summary", () => {
           "INSERT INTO memberships (group_id, member_id, joined_at) SELECT ?1, id, ?2 FROM members WHERE username = ?3",
         ).bind(friday, now, username),
         env.DB.prepare(
-          "INSERT INTO checkins (member_id, game_night, availability, updated_at) SELECT id, '2026-11-03', 'maybe', ?1 FROM members WHERE username = ?2",
-        ).bind(now, username),
+          `INSERT INTO group_checkins (group_id, member_id, game_night, availability, updated_at)
+           SELECT ?1, id, '2026-11-03', 'maybe', ?2 FROM members WHERE username = ?3`,
+        ).bind(friday, now, username),
       );
     }
     await env.DB.batch(statements);
@@ -731,8 +768,9 @@ describe("the Daily Summary", () => {
           "INSERT INTO memberships (group_id, member_id, joined_at) SELECT ?1, id, ?2 FROM members WHERE username = ?3",
         ).bind(friday, now, username),
         env.DB.prepare(
-          "INSERT INTO checkins (member_id, game_night, availability, updated_at) SELECT id, '2026-11-03', 'maybe', ?1 FROM members WHERE username = ?2",
-        ).bind(now, username),
+          `INSERT INTO group_checkins (group_id, member_id, game_night, availability, updated_at)
+           SELECT ?1, id, '2026-11-03', 'maybe', ?2 FROM members WHERE username = ?3`,
+        ).bind(friday, now, username),
       );
     }
     await env.DB.batch(statements);

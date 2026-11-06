@@ -8,8 +8,18 @@ export const SAVING_MESSAGE = "Saving your answer…";
  * is aria-pressed and filled in its colour. While an answer saves, the tapped
  * tile is aria-busy (dimmed) and the status line reads "Saving your answer…";
  * the pressed tile stays on the last saved answer until the save lands.
+ * `describedBy` names the element, the Board heading on Tonight, that tells
+ * assistive technology which Group the tiles answer for.
  */
-export function CheckinTiles({ chosen, pending }: { chosen: Availability | null; pending: Availability | null }) {
+export function CheckinTiles({
+  chosen,
+  pending,
+  describedBy,
+}: {
+  chosen: Availability | null;
+  pending: Availability | null;
+  describedBy?: string;
+}) {
   return (
     <>
       <div className="checkin-tiles">
@@ -22,6 +32,7 @@ export function CheckinTiles({ chosen, pending }: { chosen: Availability | null;
             className="checkin-answer"
             data-availability={availability}
             aria-pressed={chosen === availability}
+            aria-describedby={describedBy}
             aria-busy={pending === availability ? true : undefined}
             onClick={pending ? (event) => event.preventDefault() : undefined}
           >

@@ -11,7 +11,7 @@ export const NOTIFICATIONS_INTENT = "notifications";
 
 /** Each toggle's name and the line that says when it fires. */
 const TOGGLES: Record<keyof NotificationPrefs, { name: string; detail: string }> = {
-  said_yes: { name: "Someone said Yes", detail: "When someone in one of your Groups answers Yes." },
+  said_yes: { name: "Someone said Yes", detail: "When someone answers Yes in one of your Groups." },
   game_on: { name: "Game On", detail: "When one of your Groups reaches its threshold." },
   game_off: { name: "Game Off", detail: "When a Group you said Yes in drops below it." },
   reminder: { name: "Reminder", detail: "At 5 PM if you have not answered for tonight." },

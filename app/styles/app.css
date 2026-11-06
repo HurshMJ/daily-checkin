@@ -551,18 +551,7 @@ input {
   grid-column: 1 / -1;
 }
 
-/* Tonight: the title with the line saying how many Boards the answer reaches. */
-.tonight-header {
-  display: grid;
-  gap: 0.375rem;
-}
-
-.tonight-reach {
-  color: var(--text-secondary);
-  font-size: var(--size-secondary);
-}
-
-/* Check-in: three equal answer tiles, the saving line, then the Note. */
+/* Check-in: on each Board, three equal answer tiles, the saving line, then the Note. */
 .checkin-tiles {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

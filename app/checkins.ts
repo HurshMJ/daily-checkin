@@ -83,9 +83,10 @@ export function sortRows<Row extends Pick<BoardRow, "availability" | "shownName"
   );
 }
 
-/** The line under "Tonight" saying how many Boards one answer reaches. */
-export function boardReachLine(boards: number): string {
-  return boards === 1 ? "Your answer shows on your Board" : `Your answer shows on all ${boards} of your Boards`;
+/** A Member's Check-in in one Group for tonight. */
+export interface OwnCheckin {
+  availability: Availability;
+  note: string | null;
 }
 
 /** One Group's Board for tonight. */
@@ -96,32 +97,38 @@ export interface Board {
   yes: number;
   pill: { state: PillState; text: string };
   rows: BoardRow[];
+  /** The viewer's own Check-in in this Group, or null before they answer here. */
+  own: OwnCheckin | null;
 }
 
 /** What the Tonight screen shows a Member. */
 export interface Tonight {
   gameNight: string;
-  /** The Member's own Check-in, or null before they answer. */
-  own: { availability: Availability; note: string | null } | null;
   boards: Board[];
 }
 
-export type SetNoteResult = { ok: true } | { ok: false; error: string };
+/** A Check-in change that wrote nothing because the Member is not in the Group now. */
+export type NotMember = { ok: false; notMember: true };
+
+export type SetAvailabilityResult = { ok: true } | NotMember;
+
+export type SetNoteResult = { ok: true } | { ok: false; notMember: false; error: string } | NotMember;
 
 export const ANSWER_FIRST_MESSAGE = "Answer Yes, Maybe or No before adding a Note.";
 
 /** The Groups a change touches, as a `FROM ... WHERE` clause that binds `?1` and aliases each Group `g`. */
 type GroupSource = string;
 
-/** Every Group the Member `?1` is in: for a Check-in change or the Member joining. */
+/** Every Group the Member `?1` is in: for the Member joining a Group. */
 const MEMBER_GROUPS: GroupSource = "FROM memberships mine JOIN groups g ON g.id = mine.group_id WHERE mine.member_id = ?1";
 
-/** The one Group `?1`: for a change to its threshold or Members. */
+/** The one Group `?1`: for a Check-in in it or a change to its threshold or Members. */
 const ONE_GROUP: GroupSource = "FROM groups g WHERE g.id = ?1";
 
-/** The Group `g`'s count of Yes answers from its current Members on the Game Night `?2`. */
+/** The Group `g`'s count of Yes answers in it from its current Members on the Game Night `?2`. */
 const YES_COUNT = `(SELECT COUNT(*) FROM memberships m
-            JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
+            JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
+              AND c.game_night = ?2 AND c.availability = 'yes'
             WHERE m.group_id = g.id)`;
 
 /**
@@ -173,8 +180,9 @@ function gameClaims(db: D1Database, source: GroupSource, id: number, night: stri
 
 /**
  * The Game On statement for every Group of the Member. Run it in the same D1
- * batch as any change that can raise those Groups' Yes counts: a Check-in
- * change, or the Member joining a Group. Follow it with `memberGameClaims`.
+ * batch as the Member joining a Group, which can raise that Group's Yes count
+ * when a Member rejoins on a night they answered Yes in it. Follow it with
+ * `memberGameClaims`.
  */
 export function gameOnStatement(db: D1Database, memberId: number, night: string): D1PreparedStatement {
   return db.prepare(gameOnSql(MEMBER_GROUPS)).bind(memberId, night);
@@ -187,7 +195,8 @@ export function memberGameClaims(db: D1Database, memberId: number, night: string
 
 /**
  * The Game On statement for one Group. Run it in the same D1 batch as any
- * change to the Group's threshold or Members. Follow it with `groupGameClaims`.
+ * Check-in in the Group or change to its threshold or Members. Follow it with
+ * `groupGameClaims`.
  */
 export function groupGameOnStatement(db: D1Database, groupId: number, night: string): D1PreparedStatement {
   return db.prepare(gameOnSql(ONE_GROUP)).bind(groupId, night);
@@ -206,60 +215,71 @@ export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: C
   const db = env.DB;
   const notifications = createNotifications({ env, clock, ...delivery });
 
+  /** Whether the Member `?2` is in the Group `?1` now, as a SQL condition. */
+  const IS_MEMBER = "EXISTS (SELECT 1 FROM memberships WHERE group_id = ?1 AND member_id = ?2)";
+
   return {
     /**
-     * Sets the Member's Availability for tonight, creating the Check-in or
-     * changing it and keeping its Note. In the same D1 batch, which is one
-     * transaction, every Group of the Member that now has at least its
-     * threshold of Yes answers is marked Game On for tonight. Nothing ever
-     * clears that mark within the night, which is how Game Off is told apart.
-     * The same batch claims "someone said Yes", Game On and Game Off, which
-     * are then sent to everyone but the Member.
+     * Sets the Member's Availability in one Group for tonight, creating the
+     * Check-in or changing it and keeping its Note. The write is gated on the
+     * Member being in the Group now, so a removal racing the post writes
+     * nothing. In the same D1 batch, which is one transaction, the Group is
+     * marked Game On for tonight when it now has at least its threshold of Yes
+     * answers; nothing ever clears that mark within the night, which is how
+     * Game Off is told apart. The same batch claims "someone said Yes" for
+     * this Group, Game On and Game Off, which are then sent to everyone but
+     * the Member.
      */
-    async setAvailability(memberId: number, availability: Availability): Promise<void> {
+    async setAvailability(memberId: number, groupId: number, availability: Availability): Promise<SetAvailabilityResult> {
       const now = clock.now();
       const night = gameNightOf(now);
-      const claims = allClaims(saidYesClaims(db, memberId, night), memberGameClaims(db, memberId, night));
-      const { events } = await batchWithClaims(db, [
+      const claims = allClaims(saidYesClaims(db, groupId, memberId, night), groupGameClaims(db, groupId, night));
+      const { results, events } = await batchWithClaims(db, [
         db
           .prepare(
-            `INSERT INTO checkins (member_id, game_night, availability, note, updated_at)
-             VALUES (?1, ?2, ?3, NULL, ?4)
-             ON CONFLICT (member_id, game_night)
+            `INSERT INTO group_checkins (group_id, member_id, game_night, availability, note, updated_at)
+             SELECT ?1, ?2, ?3, ?4, NULL, ?5 WHERE ${IS_MEMBER}
+             ON CONFLICT (group_id, member_id, game_night)
              DO UPDATE SET availability = excluded.availability, updated_at = excluded.updated_at`,
           )
-          .bind(memberId, night, availability, now.toISOString()),
-        gameOnStatement(db, memberId, night),
+          .bind(groupId, memberId, night, availability, now.toISOString()),
+        groupGameOnStatement(db, groupId, night),
       ], claims);
       notifications.send(memberId, night, events);
+      return results[0].meta.changes > 0 ? { ok: true } : { ok: false, notMember: true };
     },
 
     /**
-     * Sets or removes the Note on tonight's Check-in. A Member with no
-     * Check-in tonight cannot add a Note: the Note never stands in for an
-     * Availability, and an empty Note never clears one.
+     * Sets or removes the Note on the Member's Check-in in one Group tonight.
+     * A Member with no Check-in in the Group tonight cannot add a Note there:
+     * the Note never stands in for an Availability, and an empty Note never
+     * clears one. Like the Availability, the write is gated on the Member
+     * being in the Group now.
      */
-    async setNote(memberId: number, raw: string): Promise<SetNoteResult> {
+    async setNote(memberId: number, groupId: number, raw: string): Promise<SetNoteResult> {
       const note = normaliseNote(raw);
       const error = noteError(note);
-      if (error) return { ok: false, error };
+      if (error) return { ok: false, notMember: false, error };
 
       const now = clock.now();
-      const result = await db
-        .prepare("UPDATE checkins SET note = ?1, updated_at = ?2 WHERE member_id = ?3 AND game_night = ?4")
-        .bind(note, now.toISOString(), memberId, gameNightOf(now))
-        .run();
-      if (result.meta.changes === 0) return { ok: false, error: ANSWER_FIRST_MESSAGE };
-      return { ok: true };
+      const [result, member] = await db.batch<{ member: number }>([
+        db
+          .prepare(
+            `UPDATE group_checkins SET note = ?3, updated_at = ?4
+             WHERE group_id = ?1 AND member_id = ?2 AND game_night = ?5 AND ${IS_MEMBER}`,
+          )
+          .bind(groupId, memberId, note, now.toISOString(), gameNightOf(now)),
+        db.prepare(`SELECT ${IS_MEMBER} AS member`).bind(groupId, memberId),
+      ]);
+      if (result.meta.changes > 0) return { ok: true };
+      if (member.results[0]?.member !== 1) return { ok: false, notMember: true };
+      return { ok: false, notMember: false, error: ANSWER_FIRST_MESSAGE };
     },
 
-    /** The Member's own Check-in and every Board they are on, for tonight. */
+    /** Every Board the Member is on for tonight, each with the Member's own Check-in in it. */
     async tonightFor(memberId: number): Promise<Tonight> {
       const night = gameNightOf(clock.now());
-      const [own, groups, rows] = await db.batch<Record<string, unknown>>([
-        db
-          .prepare("SELECT availability, note FROM checkins WHERE member_id = ?1 AND game_night = ?2")
-          .bind(memberId, night),
+      const [groups, rows] = await db.batch<Record<string, unknown>>([
         db
           .prepare(
             `SELECT g.id, g.name, g.threshold, COALESCE(s.was_on, 0) AS was_on
@@ -275,13 +295,12 @@ export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: C
              FROM memberships mine
              JOIN memberships m ON m.group_id = mine.group_id
              JOIN members p ON p.id = m.member_id
-             LEFT JOIN checkins c ON c.member_id = p.id AND c.game_night = ?2
+             LEFT JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = p.id AND c.game_night = ?2
              WHERE mine.member_id = ?1`,
           )
           .bind(memberId, night),
       ]);
 
-      const ownRow = own.results[0] as { availability: Availability; note: string | null } | undefined;
       const memberRows = rows.results as {
         group_id: number;
         id: number;
@@ -305,6 +324,7 @@ export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: C
               note: row.note,
             }));
           const yes = boardRows.filter((row) => row.availability === "yes").length;
+          const own = boardRows.find((row) => row.memberId === memberId);
           return {
             groupId: group.id,
             name: group.name,
@@ -312,15 +332,12 @@ export function createCheckins({ env, clock, ...delivery }: { env: Env; clock: C
             yes,
             pill: pillFor({ yes, threshold: group.threshold, wasOn: group.was_on === 1 }),
             rows: sortRows(boardRows),
+            own: own?.availability ? { availability: own.availability, note: own.note } : null,
           };
         },
       );
 
-      return {
-        gameNight: night,
-        own: ownRow ? { availability: ownRow.availability, note: ownRow.note } : null,
-        boards,
-      };
+      return { gameNight: night, boards };
     },
   };
 }

@@ -394,9 +394,9 @@ describe("Owner settings on the Group page", () => {
   });
 
   it("updates the Tonight pill after a threshold change", async () => {
-    const { alice, bob, page } = await setUp();
-    await alice.post("/?index", { intent: "availability", availability: "yes" });
-    await bob.post("/?index", { intent: "availability", availability: "yes" });
+    const { alice, bob, friday, page } = await setUp();
+    await alice.post("/?index", { intent: "availability", groupId: String(friday), availability: "yes" });
+    await bob.post("/?index", { intent: "availability", groupId: String(friday), availability: "yes" });
     expect(mainOf(await (await alice.get("/")).text())).toContain('<p class="board-pill">Needs 1 more Yes</p>');
     await alice.post(page, { intent: "threshold", threshold: "2" });
     expect(mainOf(await (await alice.get("/")).text())).toContain('<p class="board-pill">Game On</p>');

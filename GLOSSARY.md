@@ -49,7 +49,7 @@ The single evening session a Check-in counts for: the next evening coming up, la
 _Avoid_: Session, the following night
 
 **Check-in**:
-A Member's declaration of their Availability for the current Game Night, optionally with a Note. One Check-in shows on every Board the Member belongs to.
+A Member's declaration of their Availability in one Group for the current Game Night, optionally with a Note. Each Group has its own Check-in from the Member, shown only on that Group's Board, so a Member may answer Yes in one Group and No in another.
 _Avoid_: RSVP, status, vote
 
 **Availability**:
@@ -97,7 +97,7 @@ _Avoid_: Not happening, failed
 ### Notifications
 
 **Reminder**:
-A notification to a Member who has not checked in for tonight yet.
+A notification to a Member who has not checked in for tonight in at least one of their Groups.
 _Avoid_: Nudge, ping
 
 **Daily Summary**:

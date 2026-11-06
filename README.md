@@ -196,8 +196,11 @@ from each Board on Tonight):
   joins the Group at once and lands on Tonight. A logged-in Member taps
   **Join**. A Member who is already in the Group is told so, and the Invite
   stays unused.
-- Joining counts the Member's Yes for tonight at once, so the Group can reach
-  Game On the moment they join.
+- A Member answers each Group separately, on its Board on Tonight, so a new
+  Member starts the night with no answer in the Group they joined. A Member
+  who leaves and rejoins on the same night finds their earlier answer there
+  again, and a Yes in it counts at once, so the Group can reach Game On the
+  moment they rejoin.
 
 Invites live in the `invites` table (migration 0005). Treat a pending link
 like a password: anyone holding it can join the Group until it is used or
@@ -213,8 +216,9 @@ The Owner runs the Group from its page (`/groups/<id>`):
   buttons or by typing it.
 - **Members:** **Manage** on each other Member offers **Make Owner**, which
   hands the Group over (pending Invites stay valid), and **Remove**.
-- **Owner actions:** **Delete Group** deletes the Group, its Board and its
-  night state for everyone. Each Member's Check-ins stay.
+- **Owner actions:** **Delete Group** deletes the Group, its Board, its
+  Check-ins and its night state for everyone. Each Member's Check-ins in
+  their other Groups stay.
 
 Make Owner, Remove and Delete Group need a second tap within 4 seconds.
 **Manage** also offers **Make Password Reset Link** (see *Password Reset
@@ -310,10 +314,10 @@ Five types, each with a switch on the card, all on by default:
 
 | Type | Sent when | To |
 |------|-----------|----|
-| Someone said Yes | a Member's Availability becomes Yes, once per Member per Game Night | the other Members of all their Groups, once each |
+| Someone said Yes | a Member's Availability in a Group becomes Yes, once per Member per Group per Game Night; the title names the Group | the other Members of that Group |
 | Game On | a Group first reaches its threshold in a Game Night | every Member of the Group |
 | Game Off | a Group that was Game On first drops below it | the Group's Members at Yes now |
-| Reminder | the 17:00 UTC+4 hourly run, once per Game Night | each Member in at least one Group with no Check-in tonight |
+| Reminder | the 17:00 UTC+4 hourly run, once per Game Night | each Member with at least one Group that has no Check-in from them tonight, one Reminder each |
 | Daily Summary | the 20:00 UTC+4 hourly run, once per Group per Game Night, for each Group with a Check-in tonight | every Member of the Group |
 
 Game On and Game Off fire the same way for a Check-in, a threshold change, a

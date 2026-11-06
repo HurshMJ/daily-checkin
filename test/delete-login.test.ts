@@ -48,13 +48,14 @@ async function setUp() {
   await invites.joinWithInvite(ids.bob, invite.token);
   await invites.makeInvite(ids.bob, solo, "for Sam");
 
-  await alice.post("/?index", { intent: "availability", availability: "yes" });
-  await bob.post("/?index", { intent: "availability", availability: "yes" });
+  const answer = (availability: string) => ({ intent: "availability", groupId: String(friday), availability });
+  await alice.post("/?index", answer("yes"));
+  await bob.post("/?index", answer("yes"));
   app.clock.set(RESET_4_NOV);
   await app.runScheduled();
   app.clock.set("2026-11-04T12:00:00Z");
-  await alice.post("/?index", { intent: "availability", availability: "maybe" });
-  await bob.post("/?index", { intent: "availability", availability: "no" });
+  await alice.post("/?index", answer("maybe"));
+  await bob.post("/?index", answer("no"));
 
   await bob.subscribe(pushEndpoint("bob-phone"));
   await bob.post("/profile", { intent: "names", username: "Bob", displayName: "Bobby", colour: "sky" });
@@ -80,7 +81,7 @@ describe("deleting a login", () => {
     expect(login).toContain("Your login was deleted.");
 
     expect(await count("members", "id = ?1", ids.bob)).toBe(0);
-    for (const table of ["sessions", "push_subscriptions", "memberships", "checkins", "history_rows", "name_keys", "notification_prefs"]) {
+    for (const table of ["sessions", "push_subscriptions", "memberships", "checkins", "group_checkins", "history_rows", "name_keys", "notification_prefs"]) {
       expect(await count(table, "member_id = ?1", ids.bob), table).toBe(0);
     }
     expect(await count("password_reset_links", "member_id = ?1 OR made_by = ?1", ids.bob)).toBe(0);
@@ -90,7 +91,7 @@ describe("deleting a login", () => {
 
     // Alice keeps Friday, her Check-in and her History row; Bob is gone from all of it.
     expect(await groupId("Friday")).toBe(friday);
-    expect(await count("checkins", "member_id = ?1", ids.alice)).toBe(2);
+    expect(await count("group_checkins", "member_id = ?1", ids.alice)).toBe(2);
     expect(await count("history_rows", "member_id = ?1", ids.alice)).toBe(1);
     expect(await count("history_nights", "group_id = ?1", friday)).toBe(1);
     for (const page of ["/", `/groups/${friday}`, `/groups/${friday}/history`, `/groups/${friday}/history/2026-11-03`]) {
