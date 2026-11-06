@@ -14,7 +14,7 @@ const TOGGLES: Record<keyof NotificationPrefs, { name: string; detail: string }>
   said_yes: { name: "Someone said Yes", detail: "When someone answers Yes in one of your Groups." },
   game_on: { name: "Game On", detail: "When one of your Groups reaches its threshold." },
   game_off: { name: "Game Off", detail: "When a Group you said Yes in drops below it." },
-  reminder: { name: "Reminder", detail: "At 5 PM if you have not answered for tonight." },
+  reminder: { name: "Reminder", detail: "At 5 PM if one of your Groups has no answer from you tonight." },
   daily_summary: { name: "Daily Summary", detail: "At 8 PM, each of your Groups' answers for tonight." },
 };
 
