@@ -293,11 +293,14 @@ describe("Make Owner", () => {
 describe("removing a Member", () => {
   it("lets the Owner remove any other Member, keeping their Check-ins", async () => {
     const { ids, friday, groupsOf, checkins } = await lifecycle();
-    await checkins.setAvailability(ids.bob, "yes");
+    await checkins.setAvailability(ids.bob, friday, "yes");
     expect(await groupsOf.remove(ids.alice, friday, ids.bob)).toEqual({ ok: true });
     expect(await memberIdsOf(friday)).toEqual([ids.alice, ids.carol]);
     expect((await checkins.tonightFor(ids.bob)).boards).toEqual([]);
-    expect((await checkins.tonightFor(ids.bob)).own).toEqual({ availability: "yes", note: null });
+    const kept = await env.DB.prepare("SELECT availability FROM group_checkins WHERE group_id = ?1 AND member_id = ?2")
+      .bind(friday, ids.bob)
+      .first();
+    expect(kept).toEqual({ availability: "yes" });
   });
 
   it("refuses removing the Owner, a non-Member, and any non-Owner's remove", async () => {
@@ -334,27 +337,24 @@ describe("leaving a Group", () => {
     expect(await memberIdsOf(friday)).toEqual([ids.alice, ids.bob, ids.carol]);
   });
 
-  it("deletes the Group when its Owner is the last Member, with its Invites and night state", async () => {
+  it("deletes the Group when its Owner is the last Member, with its Invites, night state and Check-ins", async () => {
     const { app, ids, friday, groupsOf, checkins } = await lifecycle();
     await createInvites({ env, clock: app.clock }).makeInvite(ids.alice, friday, "");
     await groupsOf.setThreshold(ids.alice, friday, "1");
-    await checkins.setAvailability(ids.alice, "yes");
-    await checkins.setAvailability(ids.bob, "yes");
+    await checkins.setAvailability(ids.alice, friday, "yes");
+    await checkins.setAvailability(ids.bob, friday, "yes");
     await groupsOf.leave(ids.bob, friday);
     await groupsOf.leave(ids.carol, friday);
 
     expect(await groupsOf.leave(ids.alice, friday)).toEqual({ ok: true, deleted: true });
     expect(await groupRow(friday)).toBeNull();
     await expectNoRowsOf(friday);
-    // Check-ins belong to the Members, not the Group.
-    expect((await checkins.tonightFor(ids.alice)).own?.availability).toBe("yes");
-    expect((await checkins.tonightFor(ids.bob)).own?.availability).toBe("yes");
   });
 });
 
-/** D1 enforces ON DELETE CASCADE: a deleted Group leaves no memberships, Invites or night state. */
+/** D1 enforces ON DELETE CASCADE: a deleted Group leaves no memberships, Invites, night state or Check-ins. */
 async function expectNoRowsOf(groupId: number) {
-  for (const table of ["memberships", "invites", "group_night_state"]) {
+  for (const table of ["memberships", "invites", "group_night_state", "group_checkins"]) {
     const row = await env.DB.prepare(`SELECT COUNT(*) AS n FROM ${table} WHERE group_id = ?1`).bind(groupId).first<{
       n: number;
     }>();
@@ -363,11 +363,11 @@ async function expectNoRowsOf(groupId: number) {
 }
 
 describe("deleting a Group", () => {
-  it("deletes the Group for everyone with no orphan rows, keeping Check-ins", async () => {
+  it("deletes the Group for everyone with no orphan rows, its Check-ins included", async () => {
     const { app, ids, friday, groupsOf, checkins } = await lifecycle();
     await createInvites({ env, clock: app.clock }).makeInvite(ids.alice, friday, "");
     await groupsOf.setThreshold(ids.alice, friday, "1");
-    await checkins.setAvailability(ids.carol, "yes");
+    await checkins.setAvailability(ids.carol, friday, "yes");
     const before = await env.DB.prepare("SELECT COUNT(*) AS n FROM group_night_state WHERE group_id = ?1")
       .bind(friday)
       .first<{ n: number }>();
@@ -377,7 +377,6 @@ describe("deleting a Group", () => {
     expect(await groupRow(friday)).toBeNull();
     await expectNoRowsOf(friday);
     expect((await checkins.tonightFor(ids.carol)).boards).toEqual([]);
-    expect((await checkins.tonightFor(ids.carol)).own?.availability).toBe("yes");
   });
 
   it("refuses a non-Owner and a non-Member", async () => {
@@ -395,8 +394,8 @@ describe("Game On after a Group change", () => {
 
   it("turns Game On when the threshold is lowered to the Yes count", async () => {
     const { ids, friday, groupsOf, checkins } = await lifecycle();
-    await checkins.setAvailability(ids.alice, "yes");
-    await checkins.setAvailability(ids.bob, "yes");
+    await checkins.setAvailability(ids.alice, friday, "yes");
+    await checkins.setAvailability(ids.bob, friday, "yes");
     expect(await pill(checkins, ids.alice)).toBe("Needs 1 more Yes");
     await groupsOf.setThreshold(ids.alice, friday, "2");
     expect(await pill(checkins, ids.alice)).toBe("Game On");
@@ -407,7 +406,7 @@ describe("Game On after a Group change", () => {
 
   it("reads Game Off when a Yes Member is removed or leaves after Game On", async () => {
     const { ids, friday, groupsOf, checkins } = await lifecycle();
-    for (const id of [ids.alice, ids.bob, ids.carol]) await checkins.setAvailability(id, "yes");
+    for (const id of [ids.alice, ids.bob, ids.carol]) await checkins.setAvailability(id, friday, "yes");
     expect(await pill(checkins, ids.alice)).toBe("Game On");
 
     await groupsOf.remove(ids.alice, friday, ids.bob);
@@ -420,15 +419,15 @@ describe("Game On after a Group change", () => {
 
   it("reads Game Off when the threshold is raised above the Yes count after Game On", async () => {
     const { ids, friday, groupsOf, checkins } = await lifecycle();
-    for (const id of [ids.alice, ids.bob, ids.carol]) await checkins.setAvailability(id, "yes");
+    for (const id of [ids.alice, ids.bob, ids.carol]) await checkins.setAvailability(id, friday, "yes");
     await groupsOf.setThreshold(ids.alice, friday, "4");
     expect(await pill(checkins, ids.alice)).toBe("Game Off");
   });
 
   it("reads Needs N more Yes after a drop before any Game On", async () => {
     const { ids, friday, groupsOf, checkins } = await lifecycle();
-    await checkins.setAvailability(ids.alice, "yes");
-    await checkins.setAvailability(ids.bob, "yes");
+    await checkins.setAvailability(ids.alice, friday, "yes");
+    await checkins.setAvailability(ids.bob, friday, "yes");
     await groupsOf.remove(ids.alice, friday, ids.bob);
     expect(await pill(checkins, ids.alice)).toBe("Needs 2 more Yes");
     await groupsOf.setThreshold(ids.alice, friday, "5");

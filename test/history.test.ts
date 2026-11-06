@@ -76,7 +76,8 @@ async function setUp(now = "2026-11-03T12:00:00Z") {
   };
   await join(ids.bob);
   const checkins = createCheckins({ env, clock: app.clock });
-  const answer = (who: number, availability: Availability) => checkins.setAvailability(who, availability);
+  const answer = (who: number, availability: Availability, group = friday) =>
+    checkins.setAvailability(who, group, availability);
   return {
     app,
     alice,
@@ -98,7 +99,7 @@ describe("the History page", () => {
   it("shows the Group name, the Yes counts and the past nights, each linking to its page", async () => {
     const { app, alice, ids, answer, checkins, history, friday } = await setUp();
     await answer(ids.alice, "yes");
-    await checkins.setNote(ids.alice, "bringing snacks");
+    await checkins.setNote(ids.alice, friday, "bringing snacks");
     await answer(ids.bob, "maybe");
     app.clock.set(RESET_4_NOV);
     await app.runScheduled();
@@ -248,7 +249,7 @@ describe("a past night's page", () => {
     const { app, bob, ids, join, answer, checkins, friday } = await setUp();
     await join(ids.carol);
     await answer(ids.alice, "yes");
-    await checkins.setNote(ids.alice, "bringing snacks");
+    await checkins.setNote(ids.alice, friday, "bringing snacks");
     await answer(ids.bob, "no");
     app.clock.set(RESET_4_NOV);
     await app.runScheduled();

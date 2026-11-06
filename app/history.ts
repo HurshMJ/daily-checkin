@@ -168,7 +168,7 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
      * night (see `nightsToFreeze`) for every Group created before the night
      * ended: one History night with the Group's threshold and final state,
      * and one row per Member who joined before the night ended, with their
-     * Check-in or none. All writes go in one D1 batch, which is one
+     * Check-in in that Group or none. All writes go in one D1 batch, which is one
      * transaction. Rows already frozen are kept (ON CONFLICT DO NOTHING) and
      * the stored night only moves forward, so a repeat or overlapping run
      * changes nothing. Check-ins are kept: Boards read only the current Game
@@ -194,7 +194,8 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
              SELECT g.id, n.night, g.threshold,
                CASE
                  WHEN (SELECT COUNT(*) FROM memberships m
-                       JOIN checkins c ON c.member_id = m.member_id AND c.game_night = n.night AND c.availability = 'yes'
+                       JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
+                         AND c.game_night = n.night AND c.availability = 'yes'
                        WHERE m.group_id = g.id AND m.joined_at < n.ends) >= g.threshold THEN 'on'
                  WHEN EXISTS (SELECT 1 FROM group_night_state s
                               WHERE s.group_id = g.id AND s.game_night = n.night AND s.was_on = 1) THEN 'off'
@@ -214,7 +215,7 @@ export function createHistory({ env, clock }: { env: Env; clock: Clock }) {
              JOIN groups g ON g.created_at < n.ends
              JOIN history_nights h ON h.group_id = g.id AND h.game_night = n.night
              JOIN memberships m ON m.group_id = g.id AND m.joined_at < n.ends
-             LEFT JOIN checkins c ON c.member_id = m.member_id AND c.game_night = n.night
+             LEFT JOIN group_checkins c ON c.group_id = g.id AND c.member_id = m.member_id AND c.game_night = n.night
              WHERE true
              ON CONFLICT (night_id, member_id) DO NOTHING`,
           )

@@ -110,9 +110,10 @@ export function joinMembershipStatement(
 
 /**
  * Everything an existing Member's join writes, in batch order: the claim, the
- * membership gated on it, and the Game On statement, so the Member's Yes for
- * tonight counts at once. The Game On statement only ever marks a Group that
- * really has its threshold of Yes answers, so it needs no gate.
+ * membership gated on it, and the Game On statement. A Member who left and
+ * rejoins on the same night finds their earlier Check-in in the Group again,
+ * so a Yes in it counts at once. The Game On statement only ever marks a
+ * Group that really has its threshold of Yes answers, so it needs no gate.
  */
 export function joinStatements(db: D1Database, memberId: number, tokenHash: string, now: Date): D1PreparedStatement[] {
   const nowIso = now.toISOString();

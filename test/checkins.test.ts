@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { boardReachLine, type BoardRow, noteError, normaliseNote, pillFor, sortRows } from "~/checkins";
+import { type BoardRow, noteError, normaliseNote, pillFor, sortRows } from "~/checkins";
 
 describe("pillFor", () => {
   it.each([
@@ -58,12 +58,5 @@ describe("Note rule", () => {
     expect(normaliseNote("   ")).toBeNull();
     expect(normaliseNote("  on after 10 ")).toBe("on after 10");
     expect(noteError(null)).toBeNull();
-  });
-});
-
-describe("boardReachLine", () => {
-  it("counts the Boards the answer shows on", () => {
-    expect(boardReachLine(1)).toBe("Your answer shows on your Board");
-    expect(boardReachLine(2)).toBe("Your answer shows on all 2 of your Boards");
   });
 });

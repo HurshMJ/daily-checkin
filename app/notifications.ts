@@ -5,12 +5,15 @@ import type { EventType, NotificationType } from "~/push";
 import { type Clock, PushNotConfiguredError, type PushSender, type PushSubscription } from "~/services";
 
 /**
- * A push the database has claimed for sending: "someone said Yes" for the
- * actor, or Game On or Game Off for one Group. Each is claimed at most once
- * per Member or Group per Game Night, in the same D1 batch as the change that
- * causes it.
+ * A push the database has claimed for sending, for one Group: "someone said
+ * Yes" for the actor's Check-in in it, or its Game On or Game Off. Each is
+ * claimed at most once per Member and Group, or per Group, per Game Night, in
+ * the same D1 batch as the change that causes it.
  */
-export type NotificationEvent = { type: "said_yes" } | { type: "game_on" | "game_off"; groupId: number };
+export interface NotificationEvent {
+  type: EventType;
+  groupId: number;
+}
 
 /**
  * Claim statements to append to the D1 batch of a change, after the change's
@@ -51,22 +54,23 @@ export async function batchWithClaims(
 }
 
 /**
- * Claims "someone said Yes" for the Member's Check-in on the night `night`,
- * once: only while the Check-in is Yes and nothing was sent for it yet.
- * Switching away from Yes and back therefore sends nothing more.
+ * Claims "someone said Yes" for the Member's Check-in in the Group on the
+ * night `night`, once: only while that Check-in is Yes and nothing was sent
+ * for it yet. Switching away from Yes and back therefore sends nothing more;
+ * a Yes in another Group is claimed on its own Check-in.
  */
-export function saidYesClaims(db: D1Database, memberId: number, night: string): Claims {
+export function saidYesClaims(db: D1Database, groupId: number, memberId: number, night: string): Claims {
   return {
     statements: [
       db
         .prepare(
-          `UPDATE checkins SET said_yes_notified = 1
-           WHERE member_id = ?1 AND game_night = ?2 AND availability = 'yes' AND said_yes_notified = 0
-           RETURNING member_id`,
+          `UPDATE group_checkins SET said_yes_notified = 1
+           WHERE group_id = ?1 AND member_id = ?2 AND game_night = ?3 AND availability = 'yes' AND said_yes_notified = 0
+           RETURNING group_id`,
         )
-        .bind(memberId, night),
+        .bind(groupId, memberId, night),
     ],
-    events: ([claimed]) => (claimed.results.length > 0 ? [{ type: "said_yes" }] : []),
+    events: ([claimed]) => (claimed.results.length > 0 ? [{ type: "said_yes", groupId }] : []),
   };
 }
 
@@ -137,17 +141,17 @@ function yesWord(count: number): string {
  */
 export function payloadFor(
   event: NotificationEvent,
-  facts: { actorName: string; night: string; actorId: number; group?: { name: string; threshold: number; yes: number } },
+  facts: { actorName: string; night: string; actorId: number; group: { name: string; threshold: number; yes: number } },
 ): Payload {
+  const group = facts.group;
   if (event.type === "said_yes") {
     return {
-      title: `${facts.actorName} said Yes`,
-      body: "They are in for tonight. Open Tonight to see your Boards.",
+      title: `${facts.actorName} said Yes in ${group.name}`,
+      body: "They are in for tonight. Open Tonight to see the Board.",
       url: "/",
-      tag: `said-yes-${facts.actorId}-${facts.night}`,
+      tag: `said-yes-${facts.actorId}-${event.groupId}-${facts.night}`,
     };
   }
-  const group = facts.group!;
   if (event.type === "game_on") {
     return {
       title: `Game On: ${group.name}`,
@@ -168,7 +172,7 @@ export function payloadFor(
 function reminderPayload(night: string): Payload {
   return {
     title: "Are you in tonight?",
-    body: "You have not answered for tonight yet. Open Tonight to say Yes, Maybe or No.",
+    body: "Not every Group has your answer for tonight yet. Open Tonight to say Yes, Maybe or No.",
     url: "/",
     tag: `reminder-${night}`,
   };
@@ -250,19 +254,19 @@ function subscriptionsSql(recipients: string): string {
 /**
  * Recipients by event type: a subquery of member ids, and the values it binds
  * after the actor, type and time (?4 the Group, ?5 the night). D1 refuses
- * extra bindings, so each binds only what it uses.
+ * extra bindings, so each binds only what it uses. The actor is skipped by
+ * subscriptionsSql.
  */
 const RECIPIENTS: Record<EventType, (groupId: number, night: string) => [sql: string, ...binds: unknown[]]> = {
-  // The other Members of every Group the actor is in.
-  said_yes: () => [
-    "SELECT m.member_id FROM memberships mine JOIN memberships m ON m.group_id = mine.group_id WHERE mine.member_id = ?1",
-  ],
+  // The Group's Members: the actor said Yes in it.
+  said_yes: (groupId) => ["SELECT member_id FROM memberships WHERE group_id = ?4", groupId],
   // Every Member of the Group.
   game_on: (groupId) => ["SELECT member_id FROM memberships WHERE group_id = ?4", groupId],
-  // The Group's Members whose Check-in is Yes now.
+  // The Group's Members whose Check-in in it is Yes now.
   game_off: (groupId, night) => [
     `SELECT m.member_id FROM memberships m
-     JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?5 AND c.availability = 'yes'
+     JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
+       AND c.game_night = ?5 AND c.availability = 'yes'
      WHERE m.group_id = ?4`,
     groupId,
     night,
@@ -271,12 +275,15 @@ const RECIPIENTS: Record<EventType, (groupId: number, night: string) => [sql: st
 
 /**
  * Recipients of the scheduled pushes, as subqueries for subscriptionsSql.
- * The Reminder goes to each Member in at least one Group with no Check-in for
- * the night ?4; Yes, Maybe and No all count as answered. The Daily Summary of
- * the Group ?4 goes to every current Member of it.
+ * The Reminder goes to each Member with at least one Group that has no
+ * Check-in from them for the night ?4; Yes, Maybe and No all count as
+ * answered. A Member missing several Groups is listed once per Group, but
+ * subscriptionsSql reads each subscription once, so they get one Reminder.
+ * The Daily Summary of the Group ?4 goes to every current Member of it.
  */
 const REMINDER_RECIPIENTS = `SELECT m.member_id FROM memberships m
-  WHERE NOT EXISTS (SELECT 1 FROM checkins c WHERE c.member_id = m.member_id AND c.game_night = ?4)`;
+  WHERE NOT EXISTS (SELECT 1 FROM group_checkins c
+                    WHERE c.group_id = m.group_id AND c.member_id = m.member_id AND c.game_night = ?4)`;
 const SUMMARY_RECIPIENTS = "SELECT member_id FROM memberships WHERE group_id = ?4";
 
 /** The UTC+4 hour of the one hourly run that sends each scheduled push. */
@@ -334,15 +341,16 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
 
   /** Sends one event's pushes. */
   async function deliverEvent(actorId: number, night: string, event: NotificationEvent): Promise<void> {
-    const groupId = "groupId" in event ? event.groupId : null;
-    const [recipients, ...binds] = RECIPIENTS[event.type](groupId ?? 0, night);
+    const { groupId } = event;
+    const [recipients, ...binds] = RECIPIENTS[event.type](groupId, night);
     const [actor, group, subscriptions] = await db.batch<Record<string, unknown>>([
       db.prepare("SELECT username, display_name AS displayName FROM members WHERE id = ?1").bind(actorId),
       db
         .prepare(
           `SELECT g.name, g.threshold,
                   (SELECT COUNT(*) FROM memberships m
-                   JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?2 AND c.availability = 'yes'
+                   JOIN group_checkins c ON c.group_id = m.group_id AND c.member_id = m.member_id
+                     AND c.game_night = ?2 AND c.availability = 'yes'
                    WHERE m.group_id = g.id) AS yes
            FROM groups g WHERE g.id = ?1`,
         )
@@ -353,14 +361,14 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
     ]);
     const rows = subscriptions.results as unknown as SubscriptionRow[];
     const groupRow = group.results[0] as { name: string; threshold: number; yes: number } | undefined;
-    if (rows.length === 0 || (groupId !== null && !groupRow)) return;
+    if (rows.length === 0 || !groupRow) return;
 
     const actorRow = actor.results[0] as unknown as MemberNames | undefined;
     const actorName = actorRow ? shownName(actorRow) : "Someone";
     await deliver(event.type, rows, encodePayload(payloadFor(event, { actorName, actorId, night, group: groupRow })));
   }
 
-  /** Sends tonight's Reminder to each device of every Member in a Group who has not answered. */
+  /** Sends tonight's Reminder to each device of every Member who has not answered in one of their Groups. */
   async function sendReminder(night: string): Promise<void> {
     const { results } = await db
       .prepare(subscriptionsSql(REMINDER_RECIPIENTS))
@@ -371,7 +379,8 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
 
   /**
    * Sends tonight's Daily Summary of each Group with at least one Check-in
-   * from a current Member, to every current Member's devices. One read finds
+   * in it from a current Member, to every current Member's devices. Each
+   * Group lists only its own Check-ins. One read finds
    * the Groups and their Members, one batch finds each Group's devices.
    */
   async function sendDailySummaries(night: string): Promise<void> {
@@ -381,9 +390,10 @@ export function createNotifications({ env, clock, push, ctx }: { env: Env; clock
          FROM groups g
          JOIN memberships m ON m.group_id = g.id
          JOIN members p ON p.id = m.member_id
-         LEFT JOIN checkins c ON c.member_id = m.member_id AND c.game_night = ?1
+         LEFT JOIN group_checkins c ON c.group_id = g.id AND c.member_id = m.member_id AND c.game_night = ?1
          WHERE g.id IN (SELECT a.group_id FROM memberships a
-                        JOIN checkins ac ON ac.member_id = a.member_id AND ac.game_night = ?1)`,
+                        JOIN group_checkins ac ON ac.group_id = a.group_id AND ac.member_id = a.member_id
+                          AND ac.game_night = ?1)`,
       )
       .bind(night)
       .all<{ id: number; name: string; availability: Availability | null } & MemberNames>();

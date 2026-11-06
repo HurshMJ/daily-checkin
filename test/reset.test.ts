@@ -66,7 +66,8 @@ async function setUp(now = "2026-11-03T12:00:00Z") {
   if (!made.ok) throw new Error("makeInvite failed");
   await invites.joinWithInvite(ids.bob, made.token);
   const checkins = createCheckins({ env, clock: app.clock });
-  const answer = (who: number, availability: Availability) => checkins.setAvailability(who, availability);
+  const answer = (who: number, availability: Availability, group = who === ids.carol ? solo.groupId : friday.groupId) =>
+    checkins.setAvailability(who, group, availability);
   return { app, alice, ids, groups, invites, checkins, answer, friday: friday.groupId, solo: solo.groupId };
 }
 
@@ -91,9 +92,9 @@ describe("nightsToFreeze", () => {
 
 describe("the Reset", () => {
   it("freezes the night just ended for every Group, with a row per Member, answered or not", async () => {
-    const { app, ids, answer, checkins } = await setUp();
+    const { app, ids, answer, checkins, friday } = await setUp();
     await answer(ids.alice, "yes");
-    await checkins.setNote(ids.alice, "bringing snacks");
+    await checkins.setNote(ids.alice, friday, "bringing snacks");
     await answer(ids.bob, "maybe");
 
     app.clock.set(RESET_4_NOV);
@@ -106,6 +107,38 @@ describe("the Reset", () => {
       "Solo 2026-11-03 Carol - -",
     ]);
     expect(await storedNight()).toBe("2026-11-04");
+  });
+
+  it("freezes each Group's own answers, Notes and final state", async () => {
+    const { app, ids, answer, checkins, groups, invites, friday } = await setUp();
+    const sunday = await groups.createGroup(ids.alice, "Sunday");
+    if (!sunday.ok) throw new Error("createGroup failed");
+    const made = await invites.makeInvite(ids.alice, sunday.groupId, "");
+    if (!made.ok) throw new Error("makeInvite failed");
+    await invites.joinWithInvite(ids.bob, made.token);
+    await groups.setThreshold(ids.alice, friday, "2");
+    await groups.setThreshold(ids.alice, sunday.groupId, "2");
+    await answer(ids.alice, "yes");
+    await answer(ids.bob, "yes");
+    await answer(ids.alice, "no", sunday.groupId);
+    await checkins.setNote(ids.alice, sunday.groupId, "away");
+    await answer(ids.bob, "yes", sunday.groupId);
+
+    app.clock.set(RESET_4_NOV);
+    await app.runScheduled();
+
+    expect(await frozenNights()).toEqual([
+      "Friday 2026-11-03 2 on",
+      "Solo 2026-11-03 3 never",
+      "Sunday 2026-11-03 2 never",
+    ]);
+    expect(await frozenRows()).toEqual([
+      "Friday 2026-11-03 Alice yes -",
+      "Friday 2026-11-03 Bob yes -",
+      "Solo 2026-11-03 Carol - -",
+      "Sunday 2026-11-03 Alice no away",
+      "Sunday 2026-11-03 Bob yes -",
+    ]);
   });
 
   it("freezes Game On, Game Off and Never on with the threshold in force", async () => {
@@ -233,7 +266,7 @@ describe("the Reset", () => {
   });
 
   it("empties tonight's Boards, and Check-ins after 06:00 UTC+4 count for the new night", async () => {
-    const { app, alice, ids, answer } = await setUp();
+    const { app, alice, ids, answer, friday } = await setUp();
     await answer(ids.alice, "yes");
 
     app.clock.set(RESET_4_NOV);
@@ -243,7 +276,7 @@ describe("the Reset", () => {
     expect(tonight).toContain('class="board-row" data-availability="none"');
     expect(tonight).toContain("No answer yet");
 
-    expect((await alice.post("/?index", { intent: "availability", availability: "no" })).status).toBe(303);
+    expect((await alice.post("/?index", { intent: "availability", groupId: String(friday), availability: "no" })).status).toBe(303);
     app.clock.set("2026-11-05T02:00:00Z");
     await app.runScheduled();
 

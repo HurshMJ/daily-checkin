@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "react-router";
 
 import { AVAILABILITY_LABELS, type Board as BoardData, type BoardRow } from "~/checkins";
@@ -7,15 +8,21 @@ import { AvatarDot } from "./avatar-dot";
 export const NO_ANSWER = "No answer yet";
 export const NOBODY_ANSWERED = "Nobody has answered yet tonight.";
 
+/** The id of a Board's heading, the Group name, which describes every control on the Board. */
+export function boardHeadingId(groupId: number): string {
+  return `board-${groupId}`;
+}
+
 /**
  * One Group's Board for tonight: a banner with the pill and the Yes count,
- * the Group name, then one row per Member in Board order. The viewer's own
- * row reads "You", and the Board ends with its links: the Group page and its
+ * the Group name, the viewer's own answer controls for this Group
+ * (`children`), then one row per Member in Board order. The viewer's own row
+ * reads "You", and the Board ends with its links: the Group page and its
  * History. Rows and the banner reach the CSS through data-availability and
  * data-state.
  */
-export function Board({ board, viewerId }: { board: BoardData; viewerId: number }) {
-  const headingId = `board-${board.groupId}`;
+export function Board({ board, viewerId, children }: { board: BoardData; viewerId: number; children?: ReactNode }) {
+  const headingId = boardHeadingId(board.groupId);
   const nobodyAnswered = board.rows.every((row) => row.availability === null);
   return (
     <section className="card board" aria-labelledby={headingId}>
@@ -28,6 +35,7 @@ export function Board({ board, viewerId }: { board: BoardData; viewerId: number 
       <h2 id={headingId} className="board-name">
         {board.name}
       </h2>
+      {children}
       <BoardRows rows={board.rows} viewerId={viewerId} noAnswer={NO_ANSWER} />
       {nobodyAnswered ? <p className="board-empty">{NOBODY_ANSWERED}</p> : null}
       <p className="board-links">
