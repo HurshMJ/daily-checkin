@@ -16,6 +16,7 @@
     "db:migrate:local": "wrangler d1 migrations apply DB --local",
     "operator:setup-link": "node scripts/setup-link.ts",
     "operator:reset-link": "node scripts/reset-link.ts",
+    "operator:allow-groups": "node scripts/allow-groups.ts",
     "postinstall": "wrangler types"
   },
   "dependencies": {
