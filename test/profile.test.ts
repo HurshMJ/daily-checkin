@@ -2,6 +2,7 @@ import { env } from "cloudflare:workers";
 import { describe, expect, it } from "vitest";
 
 import { createInvites } from "~/invites";
+import { LEFT_COOKIE } from "~/routes/profile";
 
 import swSource from "../public/sw.js?raw";
 
@@ -98,15 +99,62 @@ describe("leaving a Group from the profile", () => {
     const { bob, friday } = await setUp();
     const response = await bob.post("/profile", { intent: "leave", groupId: String(friday), confirm: "yes" });
     expect(response.status).toBe(303);
-    expect(response.headers.get("Location")).toBe("/profile?left=Friday");
+    expect(response.headers.get("Location")).toBe("/profile");
+    expect(response.headers.getSetCookie()).toContain(
+      `${LEFT_COOKIE}=${encodeURIComponent(JSON.stringify({ name: "Friday", deleted: false }))}; Max-Age=60; HttpOnly; Secure; SameSite=Lax; Path=/`,
+    );
     expect(await isMember(friday, "Bob")).toBe(false);
 
-    const main = mainOf(await (await bob.get("/profile?left=Friday")).text());
+    const landed = await bob.get("/profile");
+    expect(landed.headers.getSetCookie()).toContain(`${LEFT_COOKIE}=; Max-Age=0; HttpOnly; Secure; SameSite=Lax; Path=/`);
+    const main = mainOf(await landed.text());
     expect(groupsCard(main)).toContain(
       '<div role="status"><div class="notice-info"><p class="notice-title">You left Friday</p><p>Its Board is off your Tonight.</p></div></div>',
     );
     expect(groupsCard(main)).toContain("You are not in any Group.");
     expect(mainOf(await (await bob.get("/")).text())).not.toContain("Friday");
+  });
+
+  it("shows the leave notice once: a reload after the cookie is cleared shows none", async () => {
+    const { bob, friday } = await setUp();
+    await bob.post("/profile", { intent: "leave", groupId: String(friday), confirm: "yes" });
+    expect(mainOf(await (await bob.get("/profile")).text())).toContain('<p class="notice-title">You left Friday</p>');
+    expect(bob.cookies.has(LEFT_COOKIE)).toBe(false);
+    expect(mainOf(await (await bob.get("/profile")).text())).not.toContain("You left");
+  });
+
+  it("shows no notice for a crafted link without the cookie", async () => {
+    const { bob } = await setUp();
+    for (const path of ["/profile?left=Friday", "/profile?left=anything&deleted=1", "/profile?left=It%20was%20deleted"]) {
+      const main = mainOf(await (await bob.get(path)).text());
+      expect(main, path).not.toContain("You left");
+      expect(main, path).not.toContain("notice-info");
+    }
+  });
+
+  it("round-trips a Group name with ; , = and non-ASCII characters", async () => {
+    const { alice } = await setUp();
+    const name = "Ünï; a=b, «ゲーム» 🎲";
+    await alice.post("/groups/new", { name });
+    const groupId = await idOf("groups", "name", name);
+    const response = await alice.post("/profile", { intent: "leave", groupId: String(groupId), confirm: "yes" });
+    expect(response.status).toBe(303);
+    const set = response.headers.getSetCookie().find((cookie) => cookie.startsWith(`${LEFT_COOKIE}=`))!;
+    const value = set.split(";")[0].slice(`${LEFT_COOKIE}=`.length);
+    expect(value).toMatch(/^[A-Za-z0-9%_.!~*'()-]+$/);
+    const main = mainOf(await (await alice.get("/profile")).text());
+    expect(main).toContain(`<p class="notice-title">You left and deleted ${name}</p>`);
+  });
+
+  it("shows no notice and does not throw for a cookie that does not decode", async () => {
+    const { bob } = await setUp();
+    for (const bad of ["%E0%A4%A", "not-json", encodeURIComponent(JSON.stringify({ name: 3, deleted: false })), encodeURIComponent("null")]) {
+      bob.cookies.set(LEFT_COOKIE, bad);
+      const response = await bob.get("/profile");
+      expect(response.status, bad).toBe(200);
+      expect(mainOf(await response.text()), bad).not.toContain("You left");
+      expect(bob.cookies.has(LEFT_COOKIE), bad).toBe(false);
+    }
   });
 
   it("deletes the Group when its Owner is the last Member", async () => {
@@ -117,10 +165,10 @@ describe("leaving a Group from the profile", () => {
     expect(mainOf(await first.text())).toMatch(/<button[^>]*data-armed="true"[^>]*>Tap again to leave and delete Solo<\/button>/);
 
     const response = await alice.post("/profile", { intent: "leave", groupId: String(solo), confirm: "yes" });
-    expect(response.headers.get("Location")).toBe("/profile?left=Solo&deleted=1");
+    expect(response.headers.get("Location")).toBe("/profile");
     expect(await groupExists(solo)).toBe(false);
-    const main = mainOf(await (await alice.get("/profile?left=Solo&deleted=1")).text());
-    expect(main).toContain('<p class="notice-title">You left and deleted Solo</p>');
+    const main = mainOf(await (await alice.get("/profile")).text());
+    expect(main).toContain('<p class="notice-title">You left and deleted Solo</p><p>It was deleted for everyone.</p>');
   });
 
   it("refuses an Owner with other Members, and a Group the Member is not in, changing nothing", async () => {

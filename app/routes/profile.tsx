@@ -2,7 +2,16 @@ import { data, Form, Link, redirect, useNavigation } from "react-router";
 
 import { hashToken } from "~/auth/crypto";
 import { clientIp } from "~/auth/login-limits";
-import { authFor, clearedSessionCookie, currentSession, requireMember } from "~/auth/request";
+import {
+  authFor,
+  clearedCookie,
+  clearedSessionCookie,
+  currentSession,
+  flashCookie,
+  readCookie,
+  requireMember,
+  setCookies,
+} from "~/auth/request";
 import { PASSWORD_LENGTH_HINT, type ProfileNamesErrors, shownName, validateProfileNames } from "~/auth/rules";
 import { AvatarDot } from "~/components/avatar-dot";
 import { FieldError } from "~/components/field-error";
@@ -23,6 +32,36 @@ const LOGOUT_EVERYWHERE = "/logout-everywhere";
 const NAMES_INTENT = "names";
 const DELETE_LOGIN_INTENT = "delete-login";
 
+/**
+ * Leaving a Group lands back here with the Group's name and whether it was
+ * deleted in this flash cookie, read once for the notice. The `__Host-`
+ * prefix keeps any other origin from planting it, so the notice shows only
+ * words the app wrote.
+ */
+export const LEFT_COOKIE = "__Host-left";
+
+interface LeftNotice {
+  name: string;
+  deleted: boolean;
+}
+
+function leftCookie(notice: LeftNotice): string {
+  return flashCookie(LEFT_COOKIE, encodeURIComponent(JSON.stringify(notice)));
+}
+
+/** The leave notice from the flash cookie; a missing or undecodable value shows no notice. */
+function readLeftNotice(raw: string | null): LeftNotice | null {
+  if (raw === null) return null;
+  try {
+    const value: unknown = JSON.parse(decodeURIComponent(raw));
+    if (typeof value !== "object" || value === null) return null;
+    const { name, deleted } = value as Record<string, unknown>;
+    return typeof name === "string" && typeof deleted === "boolean" ? { name, deleted } : null;
+  } catch {
+    return null;
+  }
+}
+
 export function meta(_: Route.MetaArgs) {
   return [{ title: "Profile · Daily Check-in" }];
 }
@@ -39,24 +78,27 @@ export async function loader({ request, context }: Route.LoaderArgs) {
     push.prefsFor(id),
     push.sessionHasSubscription(await hashToken(currentSession(context)!.token)),
   ]);
-  // Leaving a Group lands back here with the Group's name for the status line.
-  const left = search.get("left");
-  return {
-    username,
-    displayName,
-    colour,
-    // Saving the name and colour card lands back here, so the header and the
-    // top bar read the saved names from a fresh session.
-    namesSaved: search.has("saved"),
-    armLogoutEverywhere,
-    groups,
-    left: left ? { name: left, deleted: search.has("deleted") } : null,
-    notifications: {
-      publicKey: app.env.VAPID_PUBLIC_KEY,
-      onHere: pushOnHere,
-      prefs,
+  const leftRaw = readCookie(request, LEFT_COOKIE);
+  return data(
+    {
+      username,
+      displayName,
+      colour,
+      // Saving the name and colour card lands back here, so the header and the
+      // top bar read the saved names from a fresh session.
+      namesSaved: search.has("saved"),
+      armLogoutEverywhere,
+      groups,
+      left: readLeftNotice(leftRaw),
+      notifications: {
+        publicKey: app.env.VAPID_PUBLIC_KEY,
+        onHere: pushOnHere,
+        prefs,
+      },
     },
-  };
+    // The leave notice shows once: this landing clears its cookie.
+    { headers: leftRaw === null ? [] : setCookies(clearedCookie(LEFT_COOKIE)) },
+  );
 }
 
 type PasswordErrors = Partial<Record<"currentPassword" | "newPassword", string>>;
@@ -137,9 +179,10 @@ export async function action({ request, context }: Route.ActionArgs) {
     const left = await groups.leave(member.id, groupId);
     // A Member who is not in the Group gets 404; an Owner with other Members has no Leave button.
     if (!left.ok) return refused({}, left.reason === "not-member" ? 404 : 409);
-    const search = new URLSearchParams({ left: name ?? "the Group" });
-    if (left.deleted) search.set("deleted", "1");
-    return redirect(`/profile?${search}`, 303);
+    return redirect("/profile", {
+      status: 303,
+      headers: setCookies(leftCookie({ name: name ?? "the Group", deleted: left.deleted })),
+    });
   }
 
   const result = await authFor(context).changePassword(
